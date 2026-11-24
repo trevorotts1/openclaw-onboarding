@@ -400,8 +400,8 @@ class AdoptProducerTests(DeliveryUnitsTests):
         body = {"workflow_id": f"wf-{unit_id}", "status": "draft", "produced_by": du.ADOPT_PRODUCER,
                 "unit_key": f"{self.plan['launch_id']}/{unit_id}", "expected_graph_hash": ghash,
                 "readback_hash": ghash, "templates": nodes,
-                "workflows": members or [{"workflow_id": f"wf-{unit_id}", "name": "n", "graph_hash": ghash,
-                                          "templates": nodes}]}
+                "workflows": members or [{"workflow_id": f"wf-{unit_id}", "name": "n", "status": "draft",
+                                          "graph_hash": ghash, "templates": nodes}]}
         body.update(override)
         rel = f"automations/{unit_id}.adopt.json"
         raw = write(self.root / rel, body)
@@ -463,21 +463,39 @@ class AdoptProducerTests(DeliveryUnitsTests):
     def test_negative_twin_a_recorded_hash_that_is_not_the_graphs_is_refused(self):
         unit = self.automations[0]
         wrong = _graph_tool(EDITED)
-        members = [{"workflow_id": f"wf-{unit}", "name": "n", "graph_hash": wrong, "templates": NODES}]
+        members = [{"workflow_id": f"wf-{unit}", "name": "n", "status": "draft", "graph_hash": wrong,
+                    "templates": NODES}]
         fails = self.run_with(members=members, expected_graph_hash=wrong)
         self.assertEqual(len(fails), 1, fails)
         self.assertIn("not the hash of its saved graph", fails[0])
 
-    def test_negative_twin_a_not_draft_adopted_workflow_is_refused(self):
-        fails = self.run_with(status="published")
+    def test_an_adopted_workflow_may_be_published_and_says_so_but_no_other_status(self):
+        unit = self.automations[0]
+        ghash = _graph_tool(NODES)
+        published = [{"workflow_id": f"wf-{unit}", "name": "n", "status": "published", "graph_hash": ghash,
+                      "templates": NODES}]
+        self.assertEqual(self.run_with(status="published", members=published), [])
+        for status in ("archived", "", None):
+            with self.subTest(status):
+                bad = [dict(published[0], status=status)]
+                fails = self.run_with(status=status, members=bad)
+                self.assertEqual(len(fails), 1, fails)
+                self.assertIn("status", fails[0])
+
+    def test_a_build_command_export_must_still_be_a_draft(self):
+        fails = [f for f in self.check(self.package(rows=[
+            self.export(u, **({"status": "published"} if u == self.automations[0] else {}))
+            for u in self.automations]))]
         self.assertEqual(len(fails), 1, fails)
         self.assertIn("not 'draft'", fails[0])
 
     def test_every_listed_workflow_needs_its_own_qc(self):
         unit = self.automations[0]
         ghash = _graph_tool(NODES)
-        members = [{"workflow_id": f"wf-{unit}", "name": "a", "graph_hash": ghash, "templates": NODES},
-                   {"workflow_id": f"wf-{unit}-second", "name": "b", "graph_hash": ghash, "templates": NODES}]
+        members = [{"workflow_id": f"wf-{unit}", "name": "a", "status": "draft", "graph_hash": ghash,
+                    "templates": NODES},
+                   {"workflow_id": f"wf-{unit}-second", "name": "b", "status": "draft", "graph_hash": ghash,
+                    "templates": NODES}]
         fails = self.run_with(members=members)
         self.assertEqual(len(fails), 1, fails)
         self.assertIn("wf-%s-second" % unit, fails[0])

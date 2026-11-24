@@ -6,7 +6,8 @@ no workflow for) and live in GoHighLevel as DRAFT workflows. ``caf workflows ado
 ``skill44.workflow-export.v1`` object WITHOUT pretending the build command produced them:
 
 * ``produced_by`` is ``adopt`` (never the build command's name);
-* the saved graph is read back from GoHighLevel now, must be a draft, and must pass Skill 44's own
+* the saved graph is read back from GoHighLevel now, must be a draft or published workflow (the
+  true status is recorded), and must pass Skill 44's own
   graph validator (``tools/validate_graph.py``, the same one Skill 83 re-runs);
 * ``expected_graph_hash`` is the real hash of that saved graph, computed here, not copied from a reader;
 * a delivery row is written ONLY when every adopted workflow also has a signed per-build QC result
@@ -29,6 +30,10 @@ from cli_anything.gohighlevel.utils.delivery_export import (
 )
 
 ADOPT_PRODUCER = "adopt"
+# The status an adopted workflow really has. An adopted workflow may already have been published on the
+# owner's order, so the export records the true status instead of insisting on a draft; anything else
+# (archived, unknown, absent) is refused. The build command's own exports stay draft-only.
+ADOPTABLE_STATUS = ("draft", "published")
 QC_NAME = "qc-%s.json"
 
 
@@ -52,8 +57,8 @@ def read_member(workflow_id: str, read_workflow: Callable[[str], Optional[Mappin
         return None, "workflow %s cannot be read back now" % workflow_id
     if (doc.get("id") or doc.get("_id")) != workflow_id:
         return None, "workflow %s: the read-back is a different workflow" % workflow_id
-    if doc.get("status") != "draft":
-        return None, "workflow %s is %r, not a draft" % (workflow_id, doc.get("status"))
+    if doc.get("status") not in ADOPTABLE_STATUS:
+        return None, "workflow %s is %r, not a draft or published workflow" % (workflow_id, doc.get("status"))
     data = doc.get("workflowData")
     templates = data.get("templates") if isinstance(data, Mapping) else doc.get("templates")
     if not isinstance(templates, list) or not templates:
@@ -61,7 +66,7 @@ def read_member(workflow_id: str, read_workflow: Callable[[str], Optional[Mappin
     ok, detail = graph_passes(templates)
     if not ok:
         return None, "workflow %s saved graph refused: %s" % (workflow_id, detail)
-    return {"workflow_id": workflow_id, "name": doc.get("name"),
+    return {"workflow_id": workflow_id, "name": doc.get("name"), "status": doc.get("status"),
             "graph_hash": graph_hash(templates), "templates": templates}, None
 
 
@@ -107,13 +112,13 @@ def adopt_unit(unit_key: str, workflow_ids: list, read_workflow, graph_hash, out
         "contract": EXPORT_CONTRACT,
         "workflow_id": primary["workflow_id"],
         "name": primary["name"],
-        "status": "draft",
+        "status": primary["status"],
         "unit_key": unit_key,
         "produced_by": ADOPT_PRODUCER,
         "expected_graph_hash": primary["graph_hash"],
         "readback_hash": primary["graph_hash"],
         "templates": primary["templates"],
-        "workflows": [{k: m[k] for k in ("workflow_id", "name", "graph_hash", "templates")}
+        "workflows": [{k: m[k] for k in ("workflow_id", "name", "status", "graph_hash", "templates")}
                       for m in members],
     }
     return write_json(out_dir / ("%s__%s.adopt.json" % (launch_id, unit_id)), export), members, []

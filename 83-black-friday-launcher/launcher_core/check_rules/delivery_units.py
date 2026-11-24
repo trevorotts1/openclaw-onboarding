@@ -97,6 +97,9 @@ BUILD_COMMAND = "caf workflows build --from-automation-build"
 # It is a different, honest producer: it is believed only through the graph validator, the real graph
 # hash recomputed here and a signed passing QC result that names that exact hash.
 ADOPT_PRODUCER = "adopt"
+# An adopted workflow is recorded with the status it really has: it may already be published on the
+# owner's order. The build command's own exports must still say draft.
+ADOPT_STATUSES = ("draft", "published")
 BUILDS_DOC = "automation-builds.json"
 VALIDATOR_REF = "44-convert-and-flow-operator/tools/validate_graph.py"
 EMAIL_VALIDATOR_REF = "50-email-engine/tools/validate_delivery.py"
@@ -457,6 +460,10 @@ def adopt_violations(label: str, unit_id: str, export: Mapping[str, Any], valida
     out: List[str] = []
     for member in members:
         wid = member["workflow_id"]
+        if member.get("status") not in ADOPT_STATUSES:
+            out.append(f"{label} adopted workflow {wid!r} status is {member.get('status')!r}, "
+                       f"not one of {', '.join(ADOPT_STATUSES)}")
+            continue
         nodes = member.get("templates")
         if not (isinstance(nodes, list) and nodes):
             out.append(f"{label} adopted workflow {wid!r} carries no saved graph")
@@ -516,7 +523,10 @@ def automation_violations(unit_id: str, row: Any, launch_id: Any, expected: Mapp
     wrong = []
     if not lp._nonempty_str(export.get("workflow_id")):
         wrong.append("no workflow_id")
-    if export.get("status") != "draft":
+    if adopted:
+        if export.get("status") not in ADOPT_STATUSES:
+            wrong.append(f"status is {export.get('status')!r}, not one of {', '.join(ADOPT_STATUSES)}")
+    elif export.get("status") != "draft":
         wrong.append(f"status is {export.get('status')!r}, not 'draft'")
     if export.get("unit_key") != f"{launch_id}/{unit_id}":
         wrong.append(f"unit_key is {export.get('unit_key')!r}, not '{launch_id}/{unit_id}'")

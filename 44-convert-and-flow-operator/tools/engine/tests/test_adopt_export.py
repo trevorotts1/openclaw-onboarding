@@ -91,7 +91,8 @@ def test_hash_command_refuses_an_export_with_no_graph(tmp_path):
 
 
 @pytest.mark.parametrize("docs,why", [
-    ({"wf-a": live("wf-a", status="published")}, "not a draft"),
+    ({"wf-a": live("wf-a", status="archived")}, "not a draft or published"),
+    ({"wf-a": live("wf-a", status=None)}, "not a draft or published"),
     ({"wf-a": live("wf-a", templates=ORPHANED)}, "saved graph refused"),
     ({}, "cannot be read back"),
     ({"wf-a": live("wf-other")}, "cannot be read back"),
@@ -106,6 +107,13 @@ def test_a_workflow_that_is_not_a_passing_draft_is_refused_by_name(tmp_path, doc
     if why != "cannot be read back":
         assert why in reasons[0]
     assert not (tmp_path / "out").exists()
+
+
+def test_a_published_workflow_is_adopted_with_its_true_status(tmp_path):
+    path, members, reasons = adopt(tmp_path, {"wf-a": live("wf-a", status="published")}, ["wf-a"])
+    assert reasons == []
+    export = json.loads(path.read_text())
+    assert export["status"] == "published" and export["workflows"][0]["status"] == "published"
 
 
 @pytest.mark.parametrize("unit", ["auto_opt_in", "a/b/c", "/auto", "launch/"])
