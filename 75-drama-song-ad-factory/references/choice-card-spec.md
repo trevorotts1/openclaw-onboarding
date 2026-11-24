@@ -218,10 +218,7 @@ Options are built only from registries; a test refuses any other id:
 
 The same card states, as notices and never as options, every storyboard item the
 skill will not make: sound effects (sfx stay off), an echo or reverb voice, a
-length that is not offered, and any timeline rate other than the clips' native
-rate - the master runs at its clips' native rate and is never re-timed to 30
-(fps_conform.py; `fps_set_by_choice_card` is the only escape and it is not a
-card option).
+length that is not offered, and any fps other than the 30 fps master.
 
 ### 2.1a Saved character question (FU-SAVED-CHARACTER-QUESTION, normative)
 
