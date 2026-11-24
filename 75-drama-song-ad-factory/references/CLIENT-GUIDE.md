@@ -255,12 +255,12 @@ If your setup already has a build-and-check pair and you say "use my defaults," 
 
 **How to do it.** Click each sample below and watch it. Then pick the one that makes you say, "That's my brand."
 
-- **Lifelike 3D**, high-end 3D animation with lifelike faces, clearly animated, not live action: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/ceccdb53-1db7-4513-b7d5-f8da7a9cdd65.mp4
-- **Stylized 3D**, the rounded, appealing look clients call "Pixar-style", clearly animated: sample coming soon.
-- **2D Hand-Painted**, a warm, painted, storybook look: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/79707c0f-e255-4f3f-955a-9fed2e8e9915.mp4
-- **Sketch to Life (Hybrid)**, NEW, vertical: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/923bbada-b8c2-4901-a736-8835a85605b3.mp4
-- **Canvas to 3D**, NEW, vertical, no captions: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/9eb9ea93-2cf8-4246-935f-739d2eb576cf.mp4
-- **Canvas to Life**: sample coming soon.
+- **Lifelike 3D.** Lifelike 3D: polished 3D animation with believable, lifelike faces. Clearly animated, never live action. Sample: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/ceccdb53-1db7-4513-b7d5-f8da7a9cdd65.mp4
+- **Stylized 3D.** Stylized 3D animation: rounded, Pixar-style 3D characters with big appealing eyes, simplified skin and rich colour. Sample coming soon.
+- **2D Hand-Painted.** 2D Hand-Painted: a painted cartoon look with confident line work, soft cel shading and visible brush texture. Sample: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/79707c0f-e255-4f3f-955a-9fed2e8e9915.mp4
+- **Sketch to Life (Hybrid), NEW, vertical.** Hand-drawn ink, then real light: black-and-white hand-drawn ink with a wobbly line and grey hatching, then the photoreal look in warm golden-hour light for the finale. Sample: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/923bbada-b8c2-4901-a736-8835a85605b3.mp4
+- **Canvas to 3D, NEW, vertical, no captions.** Painted cartoon, then 3D: a painted cartoon look, then lifelike 3D. Sample: https://assets.cdn.filesafe.space/Mct54Bwi1KlNouGXQcDX/media/9eb9ea93-2cf8-4246-935f-739d2eb576cf.mp4
+- **Canvas to Life.** Painted cartoon, then real light: a painted cartoon look, then the photoreal look in warm golden-hour light for the finale. Sample coming soon.
 
 If you accept Lifelike 3D, we move on.
 
@@ -270,13 +270,13 @@ If you accept Lifelike 3D, we move on.
 
 **What Maya said:** "I watched them all! I'm going with 2D Hand-Painted. It looks like a cookie-decorating storybook, which is exactly my brand."
 
-> **Did you know?** Choosing a style with a handmade feel, like painted or sketched, often suits creative and food brands, while lifelike suits services where trust and realism matter most.
+> **Did you know?** Choosing a style with a handmade feel, like painted or sketched, often suits creative and food brands, while Lifelike 3D suits services that want a polished, professional look. If you want faces that look like real people, ask for the realism look by name - Lifelike 3D is clearly animation, never live action.
 
 **What you'll see.** Your chosen style on your card.
 
-**[INFOGRAPHIC: comparison table]** *Title: "Six Looks, One Choice."* Rows for each style with a one-line vibe, word for word from that look's own mode file (`references/prompt-templates/modes/<look>.json`, the `client_wording` line): Lifelike 3D (high-end 3D animation with lifelike faces, clearly animated), Stylized 3D (rounded, appealing, Pixar-like), 2D Hand-Painted (warm storybook), Sketch to Life (sketch comes alive, vertical), Canvas to Life (painted canvas comes alive, sample coming soon), Canvas to 3D (canvas turns 3D, vertical, no captions). Draw the same character in six styles, from pencil sketch to animated 3D. Add a QR code beside each sample label.
+**[INFOGRAPHIC: comparison table]** *Title: "Six Looks, One Choice."* Rows for each style with a one-line vibe, word for word from that look's own mode file (`references/prompt-templates/modes/<look>.json`, the `client_wording` line): Lifelike 3D (Lifelike 3D: polished 3D animation with believable, lifelike faces. Clearly animated, never live action.), Stylized 3D (Stylized 3D animation: rounded, Pixar-style 3D characters with big appealing eyes, simplified skin and rich colour.), 2D Hand-Painted (2D Hand-Painted: a painted cartoon look with confident line work, soft cel shading and visible brush texture.), Sketch to Life (black-and-white hand-drawn ink with a wobbly line and grey hatching, then the photoreal look in warm golden-hour light), Canvas to Life (a painted cartoon look, then the photoreal look in warm golden-hour light), Canvas to 3D (a painted cartoon look, then lifelike 3D). Draw the same character in six styles, from pencil sketch to animated 3D. Add a QR code beside each sample label.
 
-**Every look's own words are the only words.** Each look's mode file carries a `client_wording` line, and the line above for that look must equal it. The document guard fails on drift (`client_wording` mismatch), so the guide and the mode file can never describe the same look two different ways.
+**Every look's own words are the only words.** Each look's mode file carries a `client_wording` line, and the line above for that look must equal it, whitespace and letter case aside. The document guard fails on drift (`CLIENT_WORDING_DRIFT`, `style_defaults.client_wording.check_guide_wording`), so the guide and the mode file can never describe the same look two different ways. The hybrid looks carry no `client_wording` line of their own: each is described by joining the `client_wording` of every mode it switches between, in its `looks/<look>.json` `modes` order.
 
 **What clients say, mapped once.** A client who asks for "Pixar", "Disney-style", "animated movie" or "cartoon 3D" is choosing **Stylized 3D**. A client who asks for "real", "real people" or "like a movie with actors" is choosing **realism**. "Lifelike 3D" alone stays Lifelike 3D. Anything unclear gets one question with the samples, never a guess.
 

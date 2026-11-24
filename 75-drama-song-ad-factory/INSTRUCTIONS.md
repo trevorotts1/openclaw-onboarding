@@ -573,9 +573,12 @@ card. The answers and the time answered go into the receipt
   and lock identity across styles; golden realism carries the transformation.
   The client wording for every look comes from that look's own mode file
   (`client_wording` in `references/prompt-templates/modes/<look>.json`), and a
-  guide line that differs from it is a document-guard failure. Lifelike 3D is
-  described to clients as high-end 3D animation with lifelike faces, clearly
-  animated, never live action; a client who wants real people is shown realism.
+  guide line that differs from it is a document-guard failure
+  (`CLIENT_WORDING_DRIFT`, `style_defaults.client_wording.check_guide_wording`).
+  Lifelike 3D is described to clients in its mode file's own words - "polished
+  3D animation with believable, lifelike faces. Clearly animated, never live
+  action" - never "realistic" or "look real"; a client who wants real people is
+  shown realism.
   No lip-sync on sketch shots; Canvas to 3D lip-syncs only on lifelike 3D
   close-ups.
 - **Dual presence (hybrid ads, APPROVED 2026-10-11):** each hybrid ad carries

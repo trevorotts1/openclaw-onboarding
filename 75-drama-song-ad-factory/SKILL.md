@@ -1538,10 +1538,16 @@ SOP named above.
   character shapes, slightly enlarged eyes, simplified skin, soft bounced
   light, rich color). Each look owns its style bible block, its own switching
   rules, its own QC and a `client_wording` line. **Client wording comes only
-  from that line:** the guide's line for a look must equal it, and the document
-  guard fails when they drift. Lifelike 3D is described as high-end 3D animation
-  with lifelike faces, clearly animated - never "realistic" or "look real"; a
-  client who wants real people is sent to the realism look. The mapping is
+  from that line:** the guide's line for a look must equal it, whitespace and
+  letter case aside, and the document guard fails when they drift
+  (`CLIENT_WORDING_DRIFT`, `style_defaults.client_wording.check_guide_wording`).
+  Lifelike 3D is described in its mode file's own words - "polished 3D
+  animation with believable, lifelike faces. Clearly animated, never live
+  action" - never "realistic" or "look real"; a
+  client who wants real people is sent to the realism look. A hybrid look has
+  no `client_wording` of its own: it is described by joining the `client_wording`
+  of every mode it switches between, in its `looks/<look>.json` `modes` order.
+  The mapping is
   fixed once: "Pixar", "Disney-style", "animated movie" and "cartoon 3D" mean
   Stylized 3D; "real", "real people", "like a movie with actors" mean realism;
   "Lifelike 3D" alone stays Lifelike 3D; anything unclear gets one question
