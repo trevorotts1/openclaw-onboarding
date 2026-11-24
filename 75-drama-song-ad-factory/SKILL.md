@@ -1669,7 +1669,7 @@ SOP named above.
   upscaled picture is refused. A picture that fails any point, or one that cannot be
   measured, is refused LOUDLY with every reason and no paid job runs
   (`lip_gate.run_gate(..., source_image=, image_check=)` raises `LipsyncImageRefused`).
-  Every lip-sync job (Kling avatar standard) then uses the picture as its source image.
+  Every lip-sync job (`omnihuman-2-0`) then uses the picture as its source image.
   Once a take exists, a picture-gate number alone is never a reason for a new paid job.
   QC: its mouth region must be sharp and unobstructed (`lip_gate.check_reference_set`);
   a set without it fails.
