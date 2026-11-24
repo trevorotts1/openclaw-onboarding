@@ -472,6 +472,15 @@ def _forced_ratio_refusal(section: dict, request) -> "str | None":
         return f"layout_aspect_ratio {ratio!r} is landscape; the mobile frame is portrait or square"
     if forced.get("viewport") != "mobile":
         return "layout_aspect_ratio applies to the mobile viewport only"
+    for slot in section.get("slots") or []:
+        # SWB-310 D: a section that carries a real (non-circle) image slot takes the slot's frame ratio;
+        # a recorded design-only override never outranks it (a circle slot is always 1:1 for its mask).
+        if not isinstance(slot, dict) or design_style.slot_shape(slot) == "circle":
+            continue
+        slot_ratio = slot.get("aspect_ratio")
+        if slot_ratio and slot_ratio != "auto" and slot_ratio != ratio:
+            return (f"layout_aspect_ratio {ratio!r} for section {section.get('section_id')!r} differs from the "
+                    f"section's own image slot ratio {slot_ratio!r}; the slot's ratio governs")
     block = request.get("layout_overrides") if isinstance(request, dict) else None
     rows = block.get("applied") if isinstance(block, dict) else None
     if not (isinstance(rows, list) and block.get("stage") == forced.get("stage") and any(

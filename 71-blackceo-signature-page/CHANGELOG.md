@@ -1,3 +1,13 @@
+## [1.3.53] - 2026-11-24 - thank-you spec clears the prompt floor alone; section 5 is the support button only; slot ratio governs (SWB-310)
+
+Closes the SWB-300 check findings A, B and the slot half of D. Known baseline limitations unchanged: N01 to N04 and N11. No validator was loosened.
+
+- a. `references/copy-specs/thank-you-v1.json`: sections 1 to 5 carry genuine spacing, type-handling and colour specification (desktop and mobile), so with the real model and a run's design-prose file and no layout-overrides file every desktop-wireframe and mobile-tablet section is at least 16,000 characters (section 2 was 15,603 and refused). The words "status chips" in section 2 became "status labels".
+- b. Section 5 is the filled support button, the help line with the support email and the signature line only. The outlined-button text, the "Open my access page" example, the manage-purchase wording and the behavior-note reference to an outlined button are gone from the spec (job, layout, note, `cta.note`, `cta_map`).
+- d. `stage_executor._forced_ratio_refusal` (and so `target_ratio` and `load_request`) refuses a `layout_aspect_ratio` whose ratio differs from a non-circle slot's concrete ratio on the same section; the slot's ratio governs. Circle slots and `auto` slots never conflict.
+- `stage_executor.py` changed (one hunk in `_forced_ratio_refusal`): on an installed copy that differs from the repo, apply the hunk, never overwrite the file.
+- Tests: new `tests/test_swb310_floor_and_slot.py`; `test_page_role_thank_you.py` and `test_lane_builders_roles.py` follow the new section 5 text.
+
 ## [1.3.52] - 2026-11-24 - guide verifier checks the export receipt; mobile frame ratio needs a recorded row (SWB-300)
 
 Closes the SWB-290 check findings B and D. Known baseline limitations unchanged: N01 to N04 and N11. No validator was loosened.

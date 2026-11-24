@@ -198,15 +198,15 @@ class SharedSequenceTests(RunCase):
 class UtilityButtonTests(RunCase):
     """Finding 15: a page type whose spec forbids offer buttons keeps its utility buttons."""
 
-    def test_thank_you_keeps_support_and_manage_purchase_side_by_side(self):
+    def test_thank_you_keeps_two_utility_buttons_side_by_side_when_the_copy_carries_two(self):
         text = (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8")
         text = text.replace("**[CTA BUTTON: Contact support]**",
                             "**[CTA BUTTON: Contact support]**\n\n"
-                            "**[CTA BUTTON: Manage my purchase]**")
+                            "**[CTA BUTTON: Email us]**")
         request = builder.build("visual-mockup", "thank-you", text, {}, {}, [], STUB, "", self.run,
                                 "thank_you")
         section = next(s for s in request["sections"] if s["section_id"] == "5")
-        self.assertEqual(section["cta_labels"], ["Contact support", "Manage my purchase"])
+        self.assertEqual(section["cta_labels"], ["Contact support", "Email us"])
         self.assertIsNone(section["cta"])
 
     def test_a_landing_page_still_carries_one_button_per_section(self):
@@ -265,20 +265,20 @@ class UtilityButtonTests(RunCase):
         text = (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8")
         text = text.replace("**[CTA BUTTON: Contact support]**",
                             "**[CTA BUTTON: Contact support]**\n\n"
-                            "**[CTA BUTTON: Manage my purchase]**")
+                            "**[CTA BUTTON: Email us]**")
         request = builder.build("desktop-wireframe", "thank-you", text, {}, {}, [], STUB, "", self.run,
                                 "thank_you")
         section = next(s for s in request["sections"] if s["section_id"] == "5")
         self.assertEqual(section.get("cta_layout"), "utility")
-        self.assertIn("manage-purchase action is a secondary outlined button",
+        self.assertIn("filled support button, the only button in this section",
                       section.get("cta_note", ""))
         contract = exe.copy_contract(section)
         self.assertIn("utility actions on this page", contract)
-        self.assertIn("manage-purchase action is a secondary outlined button", contract)
+        self.assertIn("filled support button, the only button in this section", contract)
         self.assertNotIn("package card", contract)
         block = wspec.prompt_block("desktop-wireframe", section, 5, 5, 1440, request)
         self.assertIn("utility actions only on this page", block)
-        self.assertIn("manage-purchase action is a secondary outlined button", block)
+        self.assertIn("filled support button, the only button in this section", block)
         self.assertNotIn("package card", block)
         self.assertNotIn("inside its card", block)
 
@@ -310,7 +310,7 @@ class UtilityButtonTests(RunCase):
         text = (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8")
         text = text.replace("**[CTA BUTTON: Contact support]**",
                             "**[CTA BUTTON: Contact support]**\n\n"
-                            "**[CTA BUTTON: Manage my purchase]**")
+                            "**[CTA BUTTON: Email us]**")
         with self.assertRaises(builder.BuildError) as ctx:
             builder.sections_from_manuscript(text, spec, {})
         self.assertIn("declares no note", str(ctx.exception))
@@ -334,7 +334,7 @@ class UtilityButtonTests(RunCase):
         text = (FIXTURES / "thank-you-path-b.md").read_text(encoding="utf-8")
         text = text.replace("**[CTA BUTTON: Contact support]**",
                             "**[CTA BUTTON: Contact support]**\n\n"
-                            "**[CTA BUTTON: Manage my purchase]**")
+                            "**[CTA BUTTON: Email us]**")
         with self.assertRaises(builder.BuildError) as ctx:
             builder.sections_from_manuscript(text, spec, {})
         self.assertIn("declares no note", str(ctx.exception))

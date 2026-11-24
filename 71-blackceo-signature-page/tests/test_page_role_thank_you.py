@@ -256,9 +256,13 @@ class BuilderTests(RunCase):
         self.assertNotIn("SLOT CANON", layouts)
         for landing_role in ("First problem", "Opening claim", "Founder letter"):
             self.assertNotIn(landing_role, layouts)
-        for sid in ("2", "4"):  # a forbidden-button section says so, from the spec
-            layout = next(s for s in request["sections"] if s["section_id"] == sid)["layout"]
-            self.assertIn("no button", layout)
+        request["_brand_block"] = exe.require_brand_colors(self.run)
+        request["_hypersat"] = exe.hypersaturation.roles_for_run(self.run)
+        for sid in ("2", "4"):  # a forbidden-button section says so, from the spec (SWB-310: in the composed prompt;
+            # the longer spec text leaves the builder's top-up less room for its own BUTTON line)
+            entry = next(s for s in request["sections"] if s["section_id"] == sid)
+            prompt = exe.stage_prompt("visual-mockup", entry, int(sid), 1440, request, "16:9")
+            self.assertIn("no button", prompt)
 
     def test_every_section_lands_in_the_prompt_band_for_both_mockup_stages(self):
         for stage in ("visual-mockup", "final-mockups"):
@@ -309,16 +313,17 @@ class PromptTests(RunCase):
 
     def test_steps_follow_the_design_style_and_manage_purchase_is_never_invented(self):
         # Style A runs numbered lists as full-width rows with square-cornered blocks; a horizontal
-        # circle timeline broke the client's style. The manage-purchase button has no destination
-        # until render time. SWB-290: the outlined button carries the copy's own label and no grey bar is
-        # drawn in the closing section (the MANAGE PURCHASE grey bar is gone).
+        # circle timeline broke the client's style. SWB-310: the closing section is the one filled support
+        # button, the help email line and the signature line only (the approved copy supplies one button),
+        # so no outlined button is drawn and no grey bar either (the MANAGE PURCHASE grey bar is gone).
         for stage, width in (("desktop-wireframe", 1440), ("mobile-tablet", 390)):
             request = self.build(stage=stage)
             steps = self.prompt(stage, 4, width, request)
             self.assertIn("Style A (Block) runs them as full-width numbered rows" if width > 768
                           else "square-cornered number blocks with hairline rules", steps, stage)
             close = self.prompt(stage, 5, width, request)
-            self.assertIn("outlined button carrying the copy's own label", close, stage)
+            self.assertIn("The support button is the only button in this section", close, stage)
+            self.assertNotIn("outlined button", close.split("PAGE TYPE STRUCTURE", 1)[1].split("\n\n", 1)[0], stage)
             self.assertIn("No grey bar is drawn anywhere in this section", close, stage)
             self.assertNotIn("MANAGE PURCHASE", close, stage)
 
