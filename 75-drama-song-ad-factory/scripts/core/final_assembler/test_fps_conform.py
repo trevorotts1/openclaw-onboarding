@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""E1 tests: motion-compensated fps conform + dup-frame gate (manual 02
-Part E E1, Critical; wave E unit W-E-U1).
+"""E1 tests: frame-rate conform + dup-frame gate (manual 02 Part E E1,
+Critical; amended by N-23).
 
-stdlib only, unittest style matching sibling tests, zero paid calls,
-no ffmpeg binary required (the dup-ratio parser is a pure function over
-ffmpeg stderr text).
+N-23 (binding): the master is 24 fps and NOTHING is interpolated. A clip at
+another rate is matched by plain frame repeat or drop (the ffmpeg `fps`
+filter); minterpolate is banned everywhere because it is what smeared the
+crowds.
 
 Covers (task acceptance):
-  build_conform_argv - 24 -> 30 emits the minterpolate mci argv; equal
-                       fps emits no filter (pass-through); duration-
-                       preserving retime (30 -> 24) uses the same
-                       minterpolate pattern; never the plain `fps` filter.
+  build_conform_argv - 30 -> 24 emits the plain `fps` filter; equal
+                       fps emits no filter (pass-through); minterpolate
+                       appears nowhere in any chain.
   conform_record     - source_fps/output_fps recorded per segment (and
                        plan_timeline stamps them on every segment).
   plan_timeline      - legacy timeline without per-clip fps still records
                        an equal-fps pass-through pair.
-  assemble argv      - the render command carries minterpolate (not
-                       `fps=`) for a 24 fps source at 30 fps.
+  assemble argv      - the render command carries no minterpolate for a
+                       30 fps source at 24 fps.
   mpdecimate_dup_ratio - pure parsing: marker ratio (drop pts: / keep
                        pts:), zero evidence -> 0.0, no crash on empty.
   assert_no_dupe_frames - dup ratio 5.0 raises exactly
@@ -42,7 +42,7 @@ import final_assembler.assembler as A        # noqa: E402
 from final_assembler import fps_conform as F  # noqa: E402
 
 
-def _plan(fps=30, src_fps=30, segs=1, dur=2.0, w=1920, h=1080):
+def _plan(fps=24, src_fps=24, segs=1, dur=2.0, w=1920, h=1080):
     """Plan with conform_record fps fields, as plan_timeline now emits."""
     return A.plan_timeline({
         "schema_version": A.TIMELINE_SCHEMA, "fps": fps,
@@ -64,51 +64,42 @@ STDERR_50_PCT = "\n".join(
 
 
 class TestBuildConformArgv(unittest.TestCase):
-    """E1(1): conform argv cases, never the plain fps filter."""
+    """E1 + N-23: conform argv cases; plain frame repeat/drop, never
+    interpolation."""
 
-    def test_24_to_30_emits_minterpolate_mci(self):
-        argv = F.build_conform_argv(24, 30)
+    def test_30_to_24_emits_plain_fps_filter(self):
+        argv = F.build_conform_argv(30, 24)
         self.assertIsInstance(argv, str)
-        self.assertIn("minterpolate=fps=30:mi_mode=mci", argv)
+        self.assertEqual(argv, "fps=24")
+        self.assertNotIn("minterpolate", argv)
 
-    def test_25_to_30_emits_minterpolate_mci(self):
-        self.assertIn("minterpolate=fps=30:mi_mode=mci",
-                      F.build_conform_argv(25, 30))
+    def test_25_to_24_emits_plain_fps_filter(self):
+        self.assertEqual(F.build_conform_argv(25, 24), "fps=24")
 
     def test_equal_fps_pass_through_no_filter(self):
-        self.assertEqual(F.build_conform_argv(30, 30), "")
+        self.assertEqual(F.build_conform_argv(24, 24), "")
         self.assertEqual(F.build_conform_argv(29.97, 29.97), "")
 
-    def test_duration_preserving_retime_same_pattern(self):
-        # 30 -> 24 (target BELOW source): a duration-preserving retime
-        # per manual wording -- same minterpolate pattern.
-        argv = F.build_conform_argv(30, 24)
-        self.assertIn("minterpolate=fps=24:mi_mode=mci", argv)
+    def test_never_minterpolate_anywhere(self):
+        # N-23 / S-28: no frame-rate interpolation on ANY shot.
+        for src, dst in ((24, 30), (25, 30), (30, 24), (23.976, 30),
+                         (30, 24), (60, 24)):
+            self.assertNotIn("minterpolate",
+                             F.build_conform_argv(src, dst))
 
-    def test_never_plain_fps_filter(self):
-        # The plain `fps` filter appears as `fps=<n>:` in a chain;
-        # minterpolate's own `fps=` key is part of the legal pattern.
-        for src, dst in ((24, 30), (25, 30), (30, 24), (23.976, 30)):
-            argv = F.build_conform_argv(src, dst)
-            self.assertRegex(argv, r"minterpolate=fps=[0-9.]+:mi_mode=mci")
-            self.assertNotRegex(argv, r"(?<!interpolate=)fps=,")
+    def test_no_bare_fps_filter_at_equal_rate(self):
+        # The plain `fps` filter only appears when the source rate differs.
+        self.assertNotIn("fps=", F.build_conform_argv(24, 24))
 
-    def test_plain_fps_banned_in_assembler_chain(self):
-        # Belt + braces on the whole call: the conform segment of the
-        # chain never contains the bare `fps=` filter.
-        import re as _re
-        argv = A.build_argv(_plan(fps=30, src_fps=24), "out.mp4")
+    def test_assembler_chain_never_interpolates(self):
+        # Belt + braces on the whole call: no chain the assembler builds
+        # carries minterpolate (N-23).
+        argv = A.build_argv(_plan(fps=24, src_fps=30), "out.mp4")
         fc = argv[argv.index("-filter_complex") + 1]
-        # The only fps= key in the chain is minterpolate's own; a bare
-        # `fps=<n>` filter (E1's banned pattern) would not sit inside a
-        # `minterpolate=` key.
-        bare = [m for m in _re.finditer(r"fps=", fc)
-                if not fc[:m.start()].endswith("interpolate=")]
-        self.assertEqual(bare, [])
+        self.assertNotIn("minterpolate", fc)
 
     def test_fractional_source_fps_string(self):
-        self.assertIn("minterpolate=fps=30:mi_mode=mci",
-                      F.build_conform_argv("30000/1001", 30))
+        self.assertEqual(F.build_conform_argv("30000/1001", 24), "fps=24")
 
     def test_bad_fps_raises(self):
         with self.assertRaises(ValueError):
@@ -121,13 +112,13 @@ class TestConformRecord(unittest.TestCase):
     """E1(3): source_fps/output_fps per segment in the manifest."""
 
     def test_record_fields_round_trip(self):
-        rec = F.conform_record(24, 30)
+        rec = F.conform_record(24, 24)
         self.assertEqual(rec["source_fps"], 24.0)
-        self.assertEqual(rec["output_fps"], 30.0)
+        self.assertEqual(rec["output_fps"], 24.0)
 
     def test_plan_timeline_stamps_every_segment(self):
         plan = A.plan_timeline({
-            "schema_version": A.TIMELINE_SCHEMA, "fps": 30,
+            "schema_version": A.TIMELINE_SCHEMA, "fps": 24,
             "width": 1920, "height": 1080, "song_path": None,
             "transition": "none",
             "segments": [{"src": "a.mp4", "dur": 2.0, "fps": 24},
@@ -135,30 +126,31 @@ class TestConformRecord(unittest.TestCase):
         }, ".")
         for seg, want in zip(plan["segments"], (24.0, 30.0)):
             self.assertEqual(seg["source_fps"], want)
-            self.assertEqual(seg["output_fps"], 30.0)
+            self.assertEqual(seg["output_fps"], 24.0)
 
     def test_legacy_timeline_defaults_to_equal_fps(self):
         # A timeline without per-clip fps keys records a pass-through
         # pair (source == output == timeline fps): additive keys on
         # blackceo.timeline/v1 segments.
-        plan = _plan(fps=30, src_fps=30)
-        self.assertEqual(plan["segments"][0]["source_fps"], 30.0)
-        self.assertEqual(plan["segments"][0]["output_fps"], 30.0)
+        plan = _plan(fps=24, src_fps=24)
+        self.assertEqual(plan["segments"][0]["source_fps"], 24.0)
+        self.assertEqual(plan["segments"][0]["output_fps"], 24.0)
 
 
 class TestBuildArgvConformWiring(unittest.TestCase):
-    """E1(2): the assembler call site uses fps_conform.build_conform_argv."""
+    """E1(2) + N-23: the assembler call site uses build_conform_argv, and
+    never interpolates."""
 
-    def test_argv_24src_carries_minterpolate_not_fps(self):
-        argv = A.build_argv(_plan(fps=30, src_fps=24), "out.mp4")
-        fc = argv[argv.index("-filter_complex") + 1]
-        self.assertIn("minterpolate=fps=30:mi_mode=mci", fc)
-        self.assertNotIn(",fps=", fc)
-
-    def test_argv_equal_src_has_no_conform(self):
-        argv = A.build_argv(_plan(fps=30, src_fps=30), "out.mp4")
+    def test_argv_30src_conforms_by_frame_drop(self):
+        argv = A.build_argv(_plan(fps=24, src_fps=30), "out.mp4")
         fc = argv[argv.index("-filter_complex") + 1]
         self.assertNotIn("minterpolate", fc)
+
+    def test_argv_equal_src_has_no_conform(self):
+        argv = A.build_argv(_plan(fps=24, src_fps=24), "out.mp4")
+        fc = argv[argv.index("-filter_complex") + 1]
+        self.assertNotIn("minterpolate", fc)
+        self.assertNotIn("fps=", fc)
 
 
 class TestMpdecimateDupRatio(unittest.TestCase):
@@ -224,14 +216,14 @@ class TestFinalGateWired(unittest.TestCase):
             tl = os.path.join(tmp, "timeline.json")
             with open(tl, "w", encoding="utf-8") as fh:
                 json.dump({
-                    "schema_version": A.TIMELINE_SCHEMA, "fps": 30,
+                    "schema_version": A.TIMELINE_SCHEMA, "fps": 24,
                     "width": 1920, "height": 1080, "song_path": None,
                     "transition": "none",
                     "segments": [{"src": "clip.mp4", "dur": 10.0}],
                 }, fh)
             rec = A.assemble(tl, os.path.join(tmp, "out.mp4"), dry_run=True)
             plan = rec["evidence"]["plan"]
-            self.assertEqual(plan["segments"][0]["output_fps"], 30.0)
+            self.assertEqual(plan["segments"][0]["output_fps"], 24.0)
 
             # Gate path itself: a failing ratio returns the exact reason.
             fail = A._fail(F.TIMELINE_DUP_FRAMES,

@@ -12,7 +12,13 @@ import math
 from pathlib import Path
 
 from storyboard_director import approval_package as AP
-from kie_dispatch.model_lock import is_locked_lipsync
+from kie_dispatch.model_lock import is_allowed_lipsync, is_locked_lipsync
+
+#: F-LIP-2 / 3C.4: H3 image-to-video is the STORY-CLIP model. A landed H3 take
+#: may count as lip-sync evidence only with a written order bound to the shot
+#: (receipt binds order + shot revision + sha + task + binding). It is never a
+#: lip-sync JOB model: that is omnihuman-2-0 alone (S-42).
+H3_FALLBACK_MODEL = "minimax-h3/image-to-video"
 from lip_sync.narrator_rule import person_on_screen
 from lipsync_clips import OPT_OUT_MISSING, ROUTE_NO_LIPSYNC, no_lipsync_opt_out
 
@@ -60,6 +66,63 @@ def _ids(value):
             and len(value) == len(set(value)))
 
 
+def _storyboard_v3(root):
+    """F-LIP-3: the run's ``storyboard-v3.json`` as (shots, contracts, stills,
+    approval), or None when the file is absent.
+
+    The v3 layout keeps the four pieces in one document. Tolerant reader: the
+    shot list is ``shots`` or ``shot_list``; approval is ``approval`` (a
+    ``state`` + per-shot dict) or per-shot ``approval_state``/``status`` keys on
+    the shots themselves. Anything malformed is left to the ordinary
+    LIPSYNC_EVIDENCE_MISSING validation in ``_approved``, never guessed.
+    """
+    path = root / "storyboard-v3.json"
+    if not path.is_file():
+        return None
+    doc = _read(_path(root, str(path)))
+    _need(isinstance(doc, dict), "LIPSYNC_EVIDENCE_MISSING",
+          "storyboard-v3.json is malformed")
+    shots = doc.get("shots", doc.get("shot_list"))
+    contracts, stills = doc.get("contracts"), doc.get("stills")
+    approval = doc.get("approval")
+    if approval is None and isinstance(shots, list):
+        per_shot = {}
+        for shot in shots:
+            if not isinstance(shot, dict):
+                continue
+            status = shot.get("approval_state", shot.get("status"))
+            if status in ("approved", "invalidated"):
+                per_shot[shot.get("shot_id")] = {
+                    "status": status, "revision": shot.get("revision"),
+                    "still_sha256": shot.get("still_sha256")}
+        approval = {"state": doc.get("approval_state", "approved"),
+                    "shots": per_shot}
+    return shots, contracts, stills, approval
+
+
+def _approved_stills(root):
+    """The approved stills dict from whichever storyboard layout the run has."""
+    path = root / "storyboard" / "stills.json"
+    if path.is_file():
+        return _read(_path(root, str(path)))
+    v3 = _storyboard_v3(root)
+    _need(isinstance(v3, tuple) and isinstance(v3[2], dict),
+          "LIPSYNC_EVIDENCE_MISSING", "no storyboard stills in either layout")
+    return v3[2]
+
+
+def _approved_shots(root):
+    """The raw shot list from either layout (chain needs it for dispatch)."""
+    path = root / "storyboard" / "shot-list.json"
+    if path.is_file():
+        raw = _read(_path(root, str(path)))
+        return raw.get("shots") if isinstance(raw, dict) else raw
+    v3 = _storyboard_v3(root)
+    _need(v3 is not None, "LIPSYNC_EVIDENCE_MISSING",
+          "no storyboard shot list in either layout")
+    return v3[0]
+
+
 def _approved(run_dir, route=None):
     """Approved lip-sync requirements for the run.
 
@@ -80,10 +143,18 @@ def _approved(run_dir, route=None):
               "approved lip-sync")
         return root, {}
     sb = root / "storyboard"
-    raw = _read(_path(root, str(sb / "shot-list.json")))
-    shots = raw.get("shots") if isinstance(raw, dict) else raw
-    contracts, stills, approval = [_read(_path(root, str(sb / name))) for name in
-                                  ("contracts.json", "stills.json", "approval.json")]
+    if (sb / "shot-list.json").is_file():
+        raw = _read(_path(root, str(sb / "shot-list.json")))
+        shots = raw.get("shots") if isinstance(raw, dict) else raw
+        contracts, stills, approval = [_read(_path(root, str(sb / name)))
+                                       for name in ("contracts.json", "stills.json", "approval.json")]
+    else:
+        # F-LIP-3: no storyboard/ files -> read storyboard-v3.json. Refuse
+        # LIPSYNC_EVIDENCE_MISSING only when NEITHER layout yields a package.
+        v3 = _storyboard_v3(root)
+        _need(v3 is not None, "LIPSYNC_EVIDENCE_MISSING",
+              "no storyboard/ files and no storyboard-v3.json in the run")
+        shots, contracts, stills, approval = v3
     _need(isinstance(shots, list) and bool(shots) and isinstance(contracts, dict)
           and isinstance(stills, dict) and isinstance(approval, dict),
           "LIPSYNC_EVIDENCE_MISSING", "storyboard inputs missing or malformed")
@@ -116,7 +187,13 @@ def _approved(run_dir, route=None):
         _need(_num(start) and _num(end) and 0 <= start < end,
               "LIPSYNC_TIMING_MISSING", "approved shot window required")
         required[sid] = {"shot_id": sid, "lip_sync_line_ids": lids, "speaker": speaker,
-                         "storyboard_revision": revision, "start_s": start, "end_s": end}
+                         "storyboard_revision": revision, "start_s": start, "end_s": end,
+                         # F-LIP-2 route token the storyboard claims; the join
+                         # compares it with the landed clip, never the reverse.
+                         "route": shot.get("lip_sync_route") or "lip_sync",
+                         # N-73: the Shot Router names the expression sheet.
+                         "expression_sheet": shot.get("expression_sheet"),
+                         "emotion": shot.get("emotion") or (shot.get("beat") or {}).get("emotion")}
     _need(seen == set(per_shot), "LIPSYNC_APPROVAL_STALE",
           "current shot IDs differ from the approved storyboard")
     _need(bool(required), "LIPSYNC_REQUIREMENTS_MISSING", "approved storyboard has no lip-sync requirements")
@@ -133,6 +210,12 @@ def _binding(row):
 #: whose approval no longer stands (a scoped revision). A regenerated lip-sync
 #: picture re-opens exactly its own shot and nothing else.
 REOPENED_STATUS = "invalidated"
+
+#: F-LIP-2: after two lettered lip-sync tries the third job is a remake of the
+#: SAME route with a fixed prompt -- letters and decor removed from the source
+#: record -- never a silent switch to another model.
+THIRD_TRY_RULE = ("third job = same-route remake with the fixed prompt "
+                  "(letters and decor removed); a model switch is never silent")
 
 
 def reopen_shot_approval(run_dir, shot_id):
@@ -253,8 +336,12 @@ def inputs_for_request(run_dir, request):
         rdir = request.get("lipsync_receipt_dir") or PG.default_receipt_dir(str(image))
         rdir = Path(rdir)
         rdir = (rdir if rdir.is_absolute() else root / rdir).resolve()
-        approved_stills = _read(_path(root, str(root / "storyboard/stills.json")))
+        # F-LIP-3: the approved stills come from whichever layout the run has
+        # (storyboard/ or storyboard-v3.json); the dispatch proof must read the
+        # same package the join approved, never one layout only.
+        approved_stills = _approved_stills(root)
         approved_hash = _sha(_path(root, approved_stills[row["shot_id"]]))
+        derivation = None
         if image_hash != approved_hash:
             derivation = PG.read_derivation(image_hash, str(rdir))
             _need(bool(derivation), "LIPSYNC_IMAGE_MISMATCH",
@@ -274,6 +361,38 @@ def inputs_for_request(run_dir, request):
         upload_path = _path(root, str(rdir / (image_hash + ".upload.json")))
         PG.require_receipt(str(image), str(rdir))
         PG.require_upload_bound(str(image), inp.get("image_url"), str(rdir))
+        lock = _read(_path(root, str(root / "control" / "look-lock.json"))) \
+            if (root / "control" / "look-lock.json").is_file() else None
+        # N-43: a lip-sync picture is a step-2 keyframe of THIS lock version made
+        # from the approved references. A frame grabbed from a clip, or a picture
+        # from an older lock version, refuses before any paid job.
+        if isinstance(derivation, dict):
+            _need(derivation.get("operation") not in ("clip_frame", "frame_from_clip"),
+                  "LIPSYNC_PICTURE_NOT_FROM_REFERENCES",
+                  "the provider picture was grabbed from a clip; a lip-sync "
+                  "picture is made from the approved references")
+        if isinstance(lock, dict):
+            current = lock.get("lock_version", lock.get("version"))
+            carried = request.get("lock_version", row.get("lock_version"))
+            _need(carried is None or carried == current,
+                  "LIPSYNC_PICTURE_NOT_FROM_REFERENCES",
+                  "the lip-sync picture comes from lock version %r but the run "
+                  "is at %r; remake it from the current references" % (carried, current))
+        # N-73: the Shot Router names the expression sheet. A picture whose
+        # sheet is not the named one is refused before any paid job.
+        named_sheet = row.get("expression_sheet")
+        if named_sheet:
+            _need(request.get("expression_sheet") == named_sheet,
+                  "LIPSYNC_EXPRESSION_MISMATCH",
+                  "the shot names expression sheet %r and the picture request "
+                  "carries %r; a sad line is never sung from another sheet"
+                  % (named_sheet, request.get("expression_sheet")))
+        emotion = row.get("emotion")
+        if emotion:
+            _need(request.get("emotion") in (None, emotion),
+                  "LIPSYNC_EXPRESSION_MISMATCH",
+                  "the line is %r and the picture request is %r"
+                  % (emotion, request.get("emotion")))
         stems = request.get("lipsync_stems")
         # One stem per SONG: the separated vocal carries the separation job's
         # first-line speaker, while this request is for THIS line. Screen this
@@ -303,6 +422,46 @@ def inputs_for_request(run_dir, request):
         raise
     except (OSError, ValueError, TypeError, KeyError, AttributeError, PG.LipsyncPictureNotGated) as exc:
         raise LipsyncEvidenceError(getattr(exc, "code", "LIPSYNC_INPUTS_MISSING"), str(exc)) from exc
+
+
+def route_agrees(route, model, order, row, *, sid, digest, task):
+    """F-LIP-2: verify the PLAN's route against the LANDED clip, never the
+    reverse. Returns {"role", "fallback"} for an admitted take; raises
+    LIPSYNC_MODEL_UNLISTED for a third model name nobody approved and
+    LIPSYNC_ROUTE_CHANGED when the route says the locked lip-sync route but the
+    landed clip is from another approved model with no recorded order bound to
+    this shot's revision, bytes and task.
+
+    ``route`` is the plan/segment route (e.g. ``kling_lipsync``); it is used for
+    the message only, because the authority is always the landed clip. Under
+    S-42 the locked model is omnihuman-2-0 and there is no backup model, so a
+    fallback take can never pass; the branch stays so an older run is refused,
+    not silently admitted."""
+    model = (model or "").strip() if isinstance(model, str) else ""
+    _need(model, "LIPSYNC_MODEL_MISMATCH",
+          "unrelated native audio/video cannot count as lip-sync")
+    # S-42: the lip-sync JOB model is omnihuman-2-0, one model, no backup. The
+    # H3 evidence fallback of F-LIP-2 is not a lip-sync job: it is a landed
+    # motion take that may stand as lip-sync evidence ONLY under a written
+    # order. A third model name is LIPSYNC_MODEL_UNLISTED.
+    role = "locked" if is_locked_lipsync(model) else (
+        "fallback" if model == H3_FALLBACK_MODEL else None)
+    _need(role is not None, "LIPSYNC_MODEL_UNLISTED",
+          "lip-sync model %r is neither the locked lip-sync model nor an "
+          "approved fallback" % (model,))
+    if role == "fallback":
+        ok = (isinstance(order, dict)
+              and str(order.get("order") or "").strip()
+              and order.get("shot_id") == sid
+              and order.get("shot_revision") == row["storyboard_revision"]
+              and order.get("sha256") == digest
+              and str(order.get("task_id") or "").strip() == task
+              and order.get("binding") == _binding(row))
+        _need(ok, "LIPSYNC_ROUTE_CHANGED",
+              "route %s says the locked lip-sync model but the landed clip is "
+              "%s with no recorded order bound to this shot/revision/sha/task"
+              % (route or "lip_sync", model))
+    return {"role": role, "fallback": role == "fallback"}
 
 
 def check_plan(plan, require_measured=False, route=None):
@@ -351,21 +510,45 @@ def check_plan(plan, require_measured=False, route=None):
         seen, windows, hashes, tasks = set(), [], set(), set()
         for i, seg in enumerate(segments):
             _need(isinstance(seg, dict), "LIPSYNC_EVIDENCE_MISSING", "malformed segment")
-            if not (seg.get("lip_sync") or seg.get("lip_sync_line_ids")):
-                continue
             sid = seg.get("shot_id")
+            if not (seg.get("lip_sync") or seg.get("lip_sync_line_ids")):
+                # F-LIP-2: a motion-flagged shot is remade with H3, never with
+                # the lip-sync model. A non-lip-sync slot whose own receipt
+                # names a lip-sync model is the route read backwards.
+                art0 = seg.get("artifact") or {}
+                rec0 = (art0.get("provenance") or {}).get("receipt_path")
+                if rec0:
+                    m0 = (_read(_path(root, rec0)).get("evidence") or {}).get("lipsync_model")
+                    _need(not (isinstance(m0, str) and is_allowed_lipsync(m0)),
+                          "LIPSYNC_ROUTE_CHANGED",
+                          "shot %r is not lip-sync but its take is %r; motion "
+                          "shots are remade with H3, never the lip-sync model"
+                          % (sid, m0))
+                continue
             row = required.get(sid)
             _need(row is not None and sid not in seen, "LIPSYNC_IDENTITY_MISMATCH", "unused/unapproved or duplicate lip-sync segment")
             seen.add(sid)
             _need(seg.get("speaker") == row["speaker"] and seg.get("lip_sync_line_ids") == row["lip_sync_line_ids"]
                   and isinstance(seg.get("faces_on_screen"), list) and row["speaker"] in seg["faces_on_screen"],
                   "LIPSYNC_IDENTITY_MISMATCH", "segment speaker/face/lines differ from approval")
+            piece_starts, piece_ends = [], []
             for lid in row["lip_sync_line_ids"]:
                 line = line_map.get(lid, {})
                 lo, hi = line.get("start", line.get("start_s")), line.get("end", line.get("end_s"))
                 _need(line.get("speaker") == row["speaker"] and _num(lo) and _num(hi)
                       and row["start_s"] <= lo < hi <= row["end_s"],
                       "LIPSYNC_IDENTITY_MISMATCH", "line speaker/window missing or inconsistent")
+                piece_starts.append(lo)
+                piece_ends.append(hi)
+            # N-101 (3.3a rules 1 and 6): a piece is whole sentences. It runs
+            # from its first sentence's first word to its last sentence's last
+            # word; a piece cut inside a sentence refuses here, before assembly.
+            # One frame of rounding is allowed.
+            _need(abs(row["start_s"] - min(piece_starts)) <= 1 / fps + 1e-8
+                  and abs(row["end_s"] - max(piece_ends)) <= 1 / fps + 1e-8,
+                  "LIPSYNC_CUTS_SENTENCE",
+                  "lip-sync piece %r starts or ends inside a sentence; a piece is "
+                  "whole sentences, never cut mid-sentence" % (sid,))
             frames, offset, xfade = seg.get("frames"), seg.get("offset_frames"), seg.get("xfade_frames", 0)
             _need(all(_num(n) for n in (frames, offset, xfade)) and frames > 0 and 0 <= xfade < frames,
                   "LIPSYNC_TIMING_MISSING", "segment frame window required")
@@ -395,11 +578,43 @@ def check_plan(plan, require_measured=False, route=None):
             _need(isinstance(task, str) and task.strip(), "LIPSYNC_TASK_MISSING", "artifact task ID required")
             receipt = _read(_path(root, provenance.get("receipt_path")))
             ev = receipt.get("evidence") or {}
-            _need(receipt.get("tool") == "kie_dispatch" and receipt.get("outcome") == "ok" and receipt.get("run_id") == run_id
+            # Lock 2 (NEVER-AGAIN dispatch lock): only kie_dispatch receipts
+            # count; a direct-API receipt refuses NO_DIRECT_SUBMIT, never a
+            # generic mismatch.
+            if receipt.get("tool") != "kie_dispatch":
+                import never_again as _na
+                raise LipsyncEvidenceError(
+                    _na.NO_DIRECT_SUBMIT,
+                    "paid job submitted outside kie_dispatch "
+                    "(direct API post refused; re-blast via dispatch())")
+            _need(receipt.get("outcome") == "ok" and receipt.get("run_id") == run_id
                   and ev.get("generated") is True and ev.get("task_id") == task,
                   "LIPSYNC_TASK_MISMATCH", "successful task/run receipt required")
-            _need(isinstance(ev.get("lipsync_model"), str) and is_locked_lipsync(ev["lipsync_model"]),
-                  "LIPSYNC_MODEL_MISMATCH", "unrelated native audio/video cannot count as lip-sync")
+            # N-16: an ADOPTED take (already paid, registered from the governed
+            # ledger) is accepted on its ledger row -- job id, model and file
+            # fingerprint -- exactly like a freshly dispatched one. The row
+            # carries `adopted` and its ledger job; the receipt must still be
+            # the governed kie_dispatch one (checked above), so nothing bought
+            # outside the governor can be adopted.
+            if seg.get("adopted"):
+                _need(isinstance(seg.get("ledger_job"), str) and seg["ledger_job"].strip(),
+                      "LIPSYNC_TASK_MISSING",
+                      "an adopted take must name its governed ledger job row")
+                evidence.setdefault("adopted", []).append(sid)
+            # LIP-02 / F-LIP-2: the PLAN's route is verified against the LANDED
+            # clip, never the reverse. A third model name refuses
+            # LIPSYNC_MODEL_UNLISTED; a route that claims the locked lip-sync
+            # model but lands another approved model with no recorded order
+            # bound to this shot/revision/sha/task refuses LIPSYNC_ROUTE_CHANGED
+            # right here, before assembly.
+            role = route_agrees(row.get("route"), ev.get("lipsync_model"),
+                                ev.get("h3_fallback_order"), row, sid=sid,
+                                digest=digest, task=task)["role"]
+            model = ev["lipsync_model"]
+            if model.strip() not in evidence.setdefault("models", []):
+                evidence["models"].append(model.strip())
+            if role == "fallback" and "models_fallback" not in evidence:
+                evidence["models_fallback"] = True
             saved_hashes = ev.get("saved_sha256")
             _need(isinstance(saved_hashes, dict), "LIPSYNC_HASH_MISMATCH", "task completion hashes missing")
             matching_hashes = [value for key, value in saved_hashes.items() if _path(root, key) == source]
@@ -419,6 +634,47 @@ def check_plan(plan, require_measured=False, route=None):
             saved = ev.get("saved_paths")
             _need(isinstance(saved, list) and source in [_path(root, p) for p in saved],
                   "LIPSYNC_ARTIFACT_MISSING", "task did not materialize this file")
+            # N-113: no eye record, no entry to the timeline. N-118 rides the
+            # same record: a wrong-voice mouth or an emotion drift written there
+            # refuses before assembly. G-WIDE-01: the singer must be seen close.
+            # Every lip-sync take needs the eye record -- a scan alone is never
+            # a pass, so there is no declaration that turns this off.
+            from lip_sync.lip_gate import lip_gate as _LG
+            _need(_LG.eye_recorded(seg), _LG.LIP_TAKE_NOT_EYE_CHECKED,
+                  "lip-sync take %r has no eye record (4-frames-per-second "
+                  "contact sheet, who looked, verdict); a scan is not a pass"
+                  % (sid,))
+            eye = seg.get("eye_record") or {}
+            _need(str(eye.get("wrong_voice", "")).lower() not in ("true", "yes", "1")
+                  and eye.get("wrong_voice_mouthed") is not True,
+                  "WRONG_VOICE_MOUTHED",
+                  "take %r mouths a part that is not its own (Right Voice check)" % (sid,))
+            # G-WIDE-01: the singer must be seen close. Every landed take is
+            # checked -- a take with no landed facts refuses, never passes.
+            close = _LG.closeup_landed(seg.get("landed"))
+            _need(close["pass"], _LG.LIPSYNC_NO_CLOSEUP,
+                  "%s: %s" % (sid, close.get("detail")))
+            # N-118 (3G.6): a tagged line's take carries the Emotion Hold result.
+            # A drift at intensity 2 or 3 refuses EMOTION_DRIFT; a check that
+            # could not run refuses too, never a silent pass.
+            if row.get("emotion"):
+                hold = seg.get("emotion_hold")
+                _need(isinstance(hold, dict), "EMOTION_DRIFT",
+                      "take %r has no Emotion Hold result for its %r line; no "
+                      "take enters the timeline unchecked" % (sid, row["emotion"]))
+                _need(hold.get("verdict") in (None, "PASS", "OK"), "EMOTION_DRIFT",
+                      "%s: %s" % (sid, hold.get("detail") or hold.get("verdict")))
+            # N-101: the returned clip is at least as long as the audio sent.
+            # `take_dur_s` is the measured returned length; a take that reports
+            # shorter than its sentence window refuses LIPSYNC_TAKE_SHORT.
+            take_dur = seg.get("take_dur_s")
+            if take_dur is not None:
+                _need(_num(take_dur) and _num(row["end_s"]) and _num(row["start_s"])
+                      and take_dur + 1 / fps >= (row["end_s"] - row["start_s"]),
+                      "LIPSYNC_TAKE_SHORT",
+                      "take %r came back shorter than its audio; cut the take at "
+                      "the sentence's length, never the sentence at the take"
+                      % (sid,))
             _need(digest not in hashes and task not in tasks, "LIPSYNC_DUPLICATE_ARTIFACT", "one generated take reused across requirements")
             hashes.add(digest)
             tasks.add(task)
@@ -430,7 +686,13 @@ def check_plan(plan, require_measured=False, route=None):
             _need(clean_end > clean_start, "LIPSYNC_TIMELINE_MISMATCH", "crossfades hide the entire clip")
             windows.append((clean_start, clean_end))
             evidence["included"].append(dict(row, task_id=task, path=str(source), sha256=digest,
-                                             visible_start_s=clean_start, visible_end_s=clean_end))
+                                             visible_start_s=clean_start, visible_end_s=clean_end,
+                                             # N-101: every piece stamps what was sent and
+                                             # what came back, with its price and job time.
+                                             sent_s=round(row["end_s"] - row["start_s"], 3),
+                                             returned_s=source_dur,
+                                             credits=ev.get("credits"),
+                                             job_s=ev.get("job_time_s")))
         _need(seen == set(required), "LIPSYNC_UNUSED_REQUIREMENTS", "approved lip-sync clips absent from final timeline")
         cursor, total = -1.0, 0.0
         for lo, hi in sorted(windows):

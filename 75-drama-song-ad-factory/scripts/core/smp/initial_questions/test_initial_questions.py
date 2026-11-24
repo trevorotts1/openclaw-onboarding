@@ -290,7 +290,7 @@ class VocabDriftTests(unittest.TestCase):
     check still holds both trees.
     """
     PLAN_LOOKS = ["Lifelike 3D", "2D Hand-Painted", "Sketch to Life",
-                  "Canvas to Life", "Canvas to 3D"]          # D29 / plan 4.1
+                  "Canvas to Life", "Canvas to 3D", "Stylized 3D"]  # D29 / N-37
     PLAN_MUSICS = [
     "Soul Ballad", "R&B Flow", "Soul Rise",            # D18 / D30 (first three)
     "Melodic Rap", "Trap Rap", "Pop Rap",              # S75-T20

@@ -97,17 +97,11 @@
   "tier_credits": 6,
   "source": "registry"
  },
- "kling/ai-avatar-standard": {
+ "omnihuman-2-0": {
   "unit": "per-second",
-  "tier_credits": 8,
+  "tier_credits": 14,
   "source": "registry",
-  "note": "D33 roster 1, Kling avatar 720P; per-second over the close-up seconds"
- },
- "infinitalk/from-audio": {
-  "unit": "per-second",
-  "tier_credits": 12,
-  "source": "catalog:live",
-  "note": "D33 roster 2, InfiniTalk backup 720p; per-second over the close-up seconds"
+  "note": "S-42/3C.1a: the one lip-sync model; 14 credits per rounded-up clip second, measured (56/70/84/98/112/308 for 4/5/6/7/8/22 s)"
  },
  "hailuo/02-image-to-video-standard": {
   "unit": "per-second",

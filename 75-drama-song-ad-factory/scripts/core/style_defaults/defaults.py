@@ -18,7 +18,7 @@ import os
 import re
 import sys
 
-#: Look vocabulary + Style Bible records (D21 five-look card).
+#: Look vocabulary + Style Bible records (D21 six-look card).
 try:
     from choice_card import looks as LOOKS
 except ImportError as _e:                      # imported as core.style_defaults

@@ -2120,6 +2120,20 @@ def _copy_word_timings(run_dir, source=None, doc=None):
     return dest
 
 
+def _decision_for(run_dir, vid):
+    """WW-21 / D9: the recorded operator decision when it is VALID (it binds
+    the measured evidence still on disk) and NAMES this variant; else None.
+    A decision that does not name the variant never releases it, and a tampered
+    or missing digest is never honoured. It never writes a PASS."""
+    try:
+        dec, rs = _SD.decision_applies(run_dir)
+    except (OSError, ValueError, TypeError):
+        return None
+    if dec is not None and not rs and str(vid) in [
+            str(v) for v in dec.get("variants") or []]:
+        return dec
+    return None
+
 def record_pick(run_dir, reply):
     """The client's 1, 2 or 3. Anything not offered is refused; returns the label.
 
@@ -2143,23 +2157,31 @@ def record_pick(run_dir, reply):
     # an older state without the map falls back to the offered entry's own id.
     vid = (str((st.get("variants") or {}).get(n) or "")
            or str((o or {}).get("variant_id") or "") or n)
+    # D9: a valid recorded operator decision that NAMES this variant releases
+    # the WW-21 acceptance boundary for the pick, exactly as factory._song_hold
+    # releases it for the music stage. It never offers a FAIL take and never
+    # writes PASS; it only lets the named variant be picked as it stands.
+    dec = _decision_for(run_dir, vid) if vid else None
     kept = client_kept(run_dir, n) if (st.get("variants") or {}) else (
         _SD.read_client_kept(run_dir, vid))
     kept_ok = kept is not None and not _SD.client_kept_reasons(kept, vid)
-    if not kept_ok:
+    if not kept_ok and not dec:
         ahold = _acceptance_refusal(run_dir, "the pick")
         if ahold:
             raise ChoiceError(ahold["detail"])
     if o and os.path.isfile(o["file"]):
         ok, why = _SD.constituent_ok(o.get("receipt"))
-        if not ok and not kept_ok:
+        if not ok and not kept_ok and not dec:
             raise ChoiceError("song %s is not offerable: %s" % (reply, why))
         src, label, take = o["file"], o["label"], o.get("take")
-    elif kept_ok:
+    elif kept_ok or dec:
         # D-4: the client kept this take, so its pick is honoured. The file is
         # the version presented for listening in THIS run, never a new one.
         src = _kept_source(st, n)
         if not src:
+            if dec:
+                raise ChoiceError("the operator decision names version %s, but no presented "
+                                  "file for it is recorded in this run" % n)
             raise ChoiceError("version %s was kept by the client, but no presented file for it "
                               "is recorded in this run" % n)
         label = re.sub(r" - NOT PASSED$", "", os.path.splitext(os.path.basename(src))[0])
@@ -2171,12 +2193,12 @@ def record_pick(run_dir, reply):
     # hold above is only for an unjudged take or a run with no passing version.
     # D-4: a take the client KEPT is released by its own record, never by a
     # rewritten gate, so the per-version refusal does not apply to it.
-    if not kept_ok and vid:
+    if not kept_ok and vid and not dec:
         vref = _SD.acceptance_variant_refusal(run_dir, vid, "the pick")
         if vref:
             raise ChoiceError(vref["detail"])
     ok, why = _SD.constituent_ok(o.get("receipt")) if o else (True, "")
-    if not ok and not kept_ok:
+    if not ok and not kept_ok and not dec:
         raise ChoiceError("song %s is not offerable: %s" % (reply, why))
     # S75-055: the pick is where the chosen take's measured timing becomes the
     # run's ONE timing receipt (music/word-timings.json). Resolve the source
@@ -2206,6 +2228,10 @@ def record_pick(run_dir, reply):
         _timing_dest = _publish_word_timings(run_dir, take)
     pick_doc = {"pick": int(n), "label": label, "sha256": _sha(picked_song(run_dir)),
                 "take": take, "variant": vid, "client_kept": bool(kept_ok)}
+    if dec:
+        # D9: the pick records WHICH decision released it, by the digest that
+        # binds that decision to the measured evidence on disk.
+        pick_doc["operator_decision"] = dec["measured_evidence_digest"]
     if _timing_dest:
         pick_doc["word_timings"] = os.path.relpath(_timing_dest, run_dir)
     _write(run_dir, "pick.json", pick_doc)
@@ -2228,6 +2254,12 @@ def refusal(run_dir):
     later stage (picture timing, paid video, image, lip-sync) before the pick
     check is even consulted."""
     ahold = _acceptance_refusal(run_dir, "every later stage")
+    if ahold and ahold.get("reason_code") == _SD.ACCEPTANCE_CODE_NOT_PROVEN:
+        # D9: a valid recorded operator decision opens the WW-21 hold exactly
+        # as it does in factory._song_hold; the pick check below still decides.
+        dec, rs = _SD.decision_applies(run_dir)
+        if dec is not None and not rs:
+            ahold = None
     if ahold:
         return ahold
     try:

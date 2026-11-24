@@ -1,4 +1,4 @@
-"""choice_card.looks: the five-look choice card (D29/D23, plan 4.1 / 6.11).
+"""choice_card.looks: the six-look choice card (D29/D23, plan 4.1 / 6.11; N-37).
 
 Owns the Style line of the choice card only -- the look menu, the no-choice
 default Lifelike 3D, and per-look Style Bible block injection. Applying a look

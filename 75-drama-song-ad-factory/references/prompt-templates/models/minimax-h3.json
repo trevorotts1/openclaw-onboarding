@@ -6,11 +6,19 @@
     "minimax-h3/reference-to-video"
   ],
   "default_for": "retired 2026-10-21; decision 5 now defaults to Hailuo 02 Standard 768P",
+  "ending_pose_rule": {
+    "first_choice": "Write the ending into the prompt and run the clip from the start picture.",
+    "exact_ending": "When the ending must match exactly, draw a second keyframe for the ending and make it the first_frame_url of the NEXT clip; the cut falls between them. Both keyframes exist before the video burst, so neither clip waits.",
+    "last_frame_only": "last_frame_url alone, with no start picture, is used only when the ending matters and the start does not. It is rare.",
+    "never": "Never send both a first and a last picture in one request unless the live registry lists both as accepted together at build time. The live registry in skill 67 is the authority."
+  },
   "request_shape": {
     "duration_s": "clamp(ceil(shot_seconds + 1.0), 4, 15): one second of trim handle; catalog window 4-15 s, default 6",
-    "resolution": "768P (card default) or 2K",
-    "first_frame_url": "the approved keyframe for this shot (image-to-video). H3 takes ONE image: first_frame_url OR last_frame_url (67 catalog max_reference_images 1).",
-    "audio": "post_processing only: minimax-h3 returns a stereo track on every take and exposes no flag to disable it. The Suno master is the soundtrack (video_router 16.2 default); the generated track is stripped in post. See native_audio."
+    "resolution": "768P (card default) or 2K. 4K is refused H3_ABOVE_2K for MiniMax H3 and passes only on the Ultra model named in storyboard/quality-mode.json. F-QM-3.",
+    "first_frame_url": "the approved keyframe for this shot (image-to-video). H3 takes ONE image per request: first_frame_url OR last_frame_url (67 catalog max_reference_images 1); the builder refuses BOTH_FRAMES_IN_ONE_REQUEST. F-PM-4.",
+    "audio": "post_processing only: minimax-h3 returns a stereo track on every take and exposes no flag to disable it. The Suno master is the soundtrack (video_router 16.2 default); the generated track is stripped in post. See native_audio.",
+    "last_frame_url": "the end picture, used only when the ending matters and the start does not. Elsewhere the ending is the NEXT clip's first_frame_url, so the cut falls between them. The builder emits it; U-DISPATCH's LAST_FRAME_WITHOUT_FIRST rule is the gate. F-PM-4 / F-QM-2.",
+    "reference_image_urls": "for minimax-h3/reference-to-video only: up to 9 pictures from the lock. Never mixed with a start or end frame in one request (REFERENCE_MIXED_WITH_FRAMES). F-QM-2 / row 3b."
   },
   "native_audio": {
     "provider": "minimax-h3/text-to-video and image-to-video return a stereo audio track on every take",
@@ -116,8 +124,8 @@
       "id": "policy",
       "lead": "Sound and text",
       "min": 200,
-      "max": 360,
-      "source": "fixed fragment SOUND_AND_TEXT"
+      "max": 1000,
+      "source": "fixed fragment SOUND_AND_TEXT (the hardened no-draw-text set) + the text-record pin from spec.text_on_screen (N-27 / T-2)"
     },
     {
       "id": "negatives",
@@ -127,24 +135,63 @@
       "source": "BASE_NEGATIVES + shot_type negatives + spec.negatives_extra; at most 16 items, highest priority first"
     }
   ],
+  "content_rules": {
+    "half_motion": "Half-motion is a requirement, not a wish: visible motion must occupy at least half of the clip's seconds. A clip whose subject is still for more than half its length fails the motion share. Motion means the subject's body, cloth, hair, breath and the camera together; a locked camera does not excuse a frozen subject.",
+    "one_action": "One clear action per clip, with an explicit start state (the first frame) and an explicit end state (the last frame). Never a list of five things.",
+    "no_stillness_sentence": "A singing-line or any performance clip never carries a stillness instruction ('minimal head movement', 'steady locked camera' as the only motion, 'settle and hold'). Such a sentence wins over every other motion word and freezes the take; brief one downbeat body action instead (sway, clap, robe swing).",
+    "waiver": "A motion-floor waiver is per shot and names its cause (a locked-off insert, a product hold). A blanket waiver across a run's singing shots is refused: eleven takes once froze inside one template sentence and no prompt inside it could pass.",
+    "motion_block": "The motion physics and timing sections must describe weight, contact, arcs and the camera's own speed words (very slow, slow, steady, brisk), one move per clip, starting in the first half second and ending before the used window ends.",
+    "measured_not_wished": "motion_share_min is measured by the motion meter on the returned take; the template states the minimum, the meter decides whether the take meets it."
+  },
+  "motion_share_min": 0.5,
+  "camera_move_rules": {
+    "min_clip_s": 6,
+    "slow_across_room_or_group_s": [
+      8,
+      10
+    ],
+    "move_is_the_point_max_s": 15,
+    "rule": "A shot whose prompt carries a pan, zoom, push-in, dolly or crane gets a clip of at least 6 seconds; 8 to 10 for a slow push across a room, a choir or a group; up to 15 when the move is the point. The move starts in the first half second and finishes before the used window ends, so the edit never cuts it off mid-move; if the used window is shorter, the edit uses the final part of the move or the shot is made static (N-102, rule H8)."
+  },
+  "prop_facing_rules": {
+    "P1": "A prop faces its user: a page, a screen, a calculator, a form, an envelope's address, a stamp has its reading side toward the eyes of the person using it.",
+    "P2": "The camera gets what a person standing there would really see: the back of the phone, the back or edge of the page, writing upside-down and small.",
+    "P3": "When the viewer must read it, the camera moves, not the prop: the Shot Router adds an insert shot over the user's shoulder or from the user's side, and that shot carries the exact words.",
+    "P4": "A prop offered to someone turns to them as it is handed over.",
+    "P5": "Something made to be shown may face the camera: a wall sign, a framed diploma, a card held up, an end card. The text record says which props these are.",
+    "P6": "A person looks at what they read: eyes on the page means the page faces the eyes.",
+    "prompt_sentence": "For every used prop the prompt states which way its reading side faces and what the camera sees; the phrase 'printed cleanly and spelled exactly' is sent only for a shot where the camera is meant to read the words (N-120)."
+  },
+  "world_rules": {
+    "crowd": "A prompt says who is there: 'the room holds the congregation of the service: every pew filled', or 'the room is empty'. The blanket 'no extra people' line is sent only for a shot whose crowd state is empty (N-121).",
+    "choir": "A close shot may show two or three choir singers; every wider shot shows the same headcount in the same place.",
+    "clock": "The window and the light follow the beat's time of day; the story clock never runs backwards.",
+    "set_pieces": "Each room's set pieces are named in its prompt, so the room that comes back is the same room."
+  },
   "fragments": {
     "REFERENCE_FRAME": "Screen-left and screen-right are always from the camera's point of view: screen-left is the left edge of the frame and screen-right is the right edge. Words like her right hand or her left shoulder name the character's own body side. Toward the camera means toward the lens; away means deeper into the set.",
-    "SOUND_AND_TEXT": "The clip is silent: no dialogue, music or sound effects, because the song is added in the edit. No captions, subtitles, logos, watermarks or readable signs are generated; any surface that would carry writing shows soft, unreadable texture, because exact words are added in post-production.",
+    "SOUND_AND_TEXT": "The clip is silent: no dialogue, music or sound effects; the song is added in the edit. No new writing is ever drawn: every letter, word, numeral, sign and watermark is exactly the writing in the start picture, unchanged for the whole shot. The model never spells, completes a word or fills a blank surface.",
     "PRINTED_PAGES": "Every visible page is filled with dense, realistic printed text: small black serif type in even lines and paragraph blocks, consistent margins and page numbers. There are no blank pages and no large empty white areas. The text stays upright and not mirrored, and it is unreadable at this distance.",
     "BASE_NEGATIVES": [
       "no scene cut, jump cut or fade inside the clip",
       "no morphing of one face into another",
-      "no extra people beyond those named",
       "no extra, missing or fused fingers",
       "no warped hands or face",
       "no flicker or strobing",
       "no camera shake",
       "no sudden exposure or colour shift",
       "no mirrored or reversed objects or lettering",
-      "no text, captions or watermark"
+      "no new or changed writing; first-frame words stay exact"
     ],
     "BOOK_CLOSED": "The hardcover book shows its front cover to the camera, upright. The spine is on the left edge of the book as seen in frame and the fore-edge is on the right. The cover matches the first frame exactly: same art, same title and author lettering, reading left to right, never mirrored, and the back cover is never shown. The book never rotates more than fifteen degrees.",
-    "BOOK_OPEN_MOTION": "To open, the right edge of the front cover lifts first and the cover swings leftward around the spine, so the book opens from right to left as the viewer sees it and comes to rest open with both pages facing the camera. Page turns: one page at a time lifts from the right-hand stack, arcs leftward and settles on the left-hand stack, slowly and evenly."
+    "BOOK_OPEN_MOTION": "To open, the right edge of the front cover lifts first and the cover swings leftward around the spine, so the book opens from right to left as the viewer sees it and comes to rest open with both pages facing the camera. Page turns: one page at a time lifts from the right-hand stack, arcs leftward and settles on the left-hand stack, slowly and evenly.",
+    "TEXT_RECORD": "Writing in this shot, described then pinned: {items} The writing on each of these stays exactly as it is in the start picture, sharp and unchanged, for the whole shot. The only writing in the shot is what is already in the start picture.",
+    "MOUTHS_CLOSED": "Nobody in this shot is singing or speaking: every mouth stays closed and relaxed for the whole clip. The line plays over this picture in the edit, so no mouth shapes a word and no jaw drops to a vowel. The performance lives in the eyes, the brows, the breath and the body.",
+    "PROP_FACING_USER": "The {obj} faces {user}: its reading side is toward {user_poss} own eyes and the camera sees the back or the edge of it, so its words are not readable in this shot.",
+    "PROP_FACING_CAMERA": "The {obj} is made to be shown and faces the camera; it reads exactly: {words}.",
+    "PROP_FACING_INSERT": "Seen from {user_poss} side, over {user_poss} shoulder, the {obj} reads exactly: {words}.",
+    "CROWD_EMPTY": "The room is empty: no people are present anywhere in the frame, no figures in the background, no one in the doorway and no crowd.",
+    "CROWD_STATE": "The room holds the people its beat names, in the number the shot's crowd state gives: every pew filled for a service in progress, the choir at its fixed headcount in its fixed place, the named people where the beat puts them. Nobody else is invented, and nobody the beat says is here is missing."
   },
   "camera_vocabulary": {
     "bracket_commands": [

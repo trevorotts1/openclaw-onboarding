@@ -137,6 +137,10 @@ def disp(label, model, input_body, lock=None, extra=None, script=None):
            "prompt_receipt": {"prompt_sha256": sha,
                               "check": {"verdict": "PASS", "reasons": []}}}
     req.update(extra or {})
+    # Lock 8: Kling avatar/video rows ride lip_sync shots; mark them so the
+    # route gate (pre-spend, pre-cap) does not mask the cap/binding gates.
+    if ML.is_locked_lipsync(model) or model.startswith("kling-"):
+        req.setdefault("lip_sync", True)
     env = MODULE.dispatch(
         model=model, request=req, save_dir=tmp, ledger_db=db,
         run_id="run-u7", logical_key=label, attempt_id="att-1",
@@ -215,14 +219,20 @@ def test_kling25_caps():
           env["reason_code"] != "PROMPT_OVER_CAP", str(env))
 
 
-# ---- 3. Avatar: 2,501 refused before the picture gate can mask it ----------
+# ---- 3. Lip-sync: OmniHuman 2.0 takes NO prompt (S-42) ---------------------
+# The retired Kling avatar had a 2,500-char prompt cap. OmniHuman 2.0 gets no
+# prompt at all (section 3A.3), so the cap block no longer owns this row: a
+# lip-sync job carrying a prompt is refused LIPSYNC_PROMPT_PRESENT, which is
+# the strictest possible answer and needs no character count.
 def test_avatar_cap():
-    refused("avatar-over", "kling/ai-avatar-standard",
-            {"prompt": "sings one line, steady camera" + "x" * 2501},
-            2500, "UNVERIFIED")
-    check("avatar: cap refused is PROMPT_OVER_CAP, never the picture gate",
-          PL.video_caps("kling/ai-avatar-standard")["prompt"] == 2500
-          and PL.video_caps("kling/ai-avatar-standard")["status"] == "UNVERIFIED")
+    env, fake, db, _ = disp("avatar-over", "omnihuman-2-0",
+                            {"prompt": "sings one line, steady camera" + "x" * 2501},
+                            extra={"lip_sync": True})
+    check("avatar: a lip-sync prompt is refused, never counted",
+          env["outcome"] == "rejected"
+          and env["reason_code"] == "LIPSYNC_PROMPT_PRESENT", str(env))
+    check("avatar: nothing sent, nothing reserved",
+          fake.calls == [] and ledger_rows(db, "avatar-over") == 0)
 
 
 # ---- 4. Kling 3.0 Omni 3,072 and Hailuo 2,000 ------------------------------
@@ -246,7 +256,7 @@ def test_table():
 
 
 def test_lipsync_binding_before_spend():
-    env, fake, db, _ = disp("unbound-lipsync", "kling/ai-avatar-standard", {"prompt": "test"})
+    env, fake, db, _ = disp("unbound-lipsync", "omnihuman-2-0", {}, extra={"lip_sync": True})
     check("unbound lipsync refused before adapter calls",
           env["reason_code"] == "LIPSYNC_EVIDENCE_MISSING" and fake.calls == [], env)
     check("unbound lipsync reserves no job", ledger_rows(db, "unbound-lipsync") == 0)
@@ -265,9 +275,9 @@ def test_lipsync_receipt_binds_materialized_file():
         source = str(Path(seg["artifact"]["path"]).resolve())
         script["save"] = (0, {"state": "success", "task_id": "t-u7", "saved_paths": [source]})
         extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
-        body = dict(extra.pop("input"), prompt="test")
-        env, fake, _, _ = disp("bound-lipsync", "kling/ai-avatar-standard",
-                               body, extra=extra, script=script)
+        body = dict(extra.pop("input"))
+        env, fake, _, _ = disp("bound-lipsync", "omnihuman-2-0",
+                               body, extra=dict(extra, lip_sync=True), script=script)
         ev = env["evidence"]
         check("bound fake dispatch succeeds", env["outcome"] == "ok", env)
         check("receipt preserves approved shot identity",
@@ -277,7 +287,7 @@ def test_lipsync_receipt_binds_materialized_file():
         check("receipt binds actual provider input URLs",
               ev.get("lipsync_inputs") is not None, ev)
         check("receipt identifies locked lipsync model",
-              ev.get("lipsync_model") == "kling/ai-avatar-standard", ev)
+              ev.get("lipsync_model") == "omnihuman-2-0", ev)
 
 
 def test_lipsync_input_substitution_before_spend():
@@ -286,9 +296,9 @@ def test_lipsync_input_substitution_before_spend():
         with tempfile.TemporaryDirectory() as tmp:
             plan = fixture(tmp)
             extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
-            body = dict(extra.pop("input"), prompt="test")
+            body = dict(extra.pop("input"))
             body[field] = "https://fake.invalid/substitute"
-            env, fake, db, _ = disp("substitute-" + field, "kling/ai-avatar-standard", body, extra=extra)
+            env, fake, db, _ = disp("substitute-" + field, "omnihuman-2-0", body, extra=dict(extra, lip_sync=True))
             check(field + " substitution rejected before transport", env["outcome"] == "rejected" and not fake.calls, env)
             check(field + " substitution reserves no job", ledger_rows(db, "substitute-" + field) == 0)
 
@@ -300,7 +310,7 @@ def test_lipsync_inputs_changed_during_preflight():
     with tempfile.TemporaryDirectory() as tmp:
         plan = fixture(tmp)
         extra = dict(fixture_request(plan, run_id="run-u7"), run_dir=plan["run_dir"])
-        body = dict(extra.pop("input"), prompt="test")
+        body = dict(extra.pop("input"))
         original = Fake74.__call__
         def change_audio(fake, argv):
             result = original(fake, argv)
@@ -308,7 +318,7 @@ def test_lipsync_inputs_changed_during_preflight():
                 Path(extra["lipsync_stems"][0]["path"]).write_bytes(b"changed-after-validation")
             return result
         with patch.object(Fake74, "__call__", change_audio):
-            env, fake, _, _ = disp("changed-input", "kling/ai-avatar-standard", body, extra=extra)
+            env, fake, _, _ = disp("changed-input", "omnihuman-2-0", body, extra=dict(extra, lip_sync=True))
         check("changed audio refused before submit", env["outcome"] == "rejected" and "submit" not in fake.order(), env)
         check("changed audio never generated", env["evidence"].get("generated") is False)
 

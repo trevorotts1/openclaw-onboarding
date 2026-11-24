@@ -125,6 +125,33 @@ class Names(unittest.TestCase):
         self.assertIn("PrimaryColour=&H00000000", fs)  # black text
         self.assertIn("BorderStyle=3", fs)
 
+    def test_force_style_carries_the_real_frame_canvas_and_a_visible_box(self):
+        """The SRT has no PlayRes: force_style must supply it, or nothing burns.
+
+        libass scales FontSize/MarginV against its 384x288 default canvas, so
+        an SRT-only burn on a 1080x1920 master pushed the words off the frame
+        (measured: pixel-identical to the clean master). BorderStyle=3 paints
+        the box in OutlineColour at Outline thickness, so Outline>0 draws it.
+        """
+        plan, why = cb.build_plan(LINES, cues=CUES, width_px=1080,
+                                  height_px=1920)
+        self.assertIsNone(why)
+        style = dict(plan["style"])
+        fs = vd.force_style(style)
+        self.assertIn("PlayResX=1080", fs)
+        self.assertIn("PlayResY=1920", fs)
+        box = vd._ass_colour(style["box_colour"])
+        self.assertIn("OutlineColour=%s" % box, fs)
+        outline = [f for f in fs.split(",") if f.startswith("Outline=")]
+        self.assertEqual(len(outline), 1, fs)
+        self.assertGreater(int(outline[0].split("=")[1]), 0, fs)
+        # The box padding tracks the font size, never a look invented here.
+        for px, want in ((86, 17), (48, 10), (5, 1)):
+            one = dict(style, font_size_px=px)
+            got = [f for f in vd.force_style(one).split(",")
+                   if f.startswith("Outline=")][0]
+            self.assertEqual(got, "Outline=%d" % want)
+
     def test_the_plan_drives_both_argv_lines(self):
         plan, _ = cb.build_plan(LINES, cues=CUES)
         cap = vd.burn_argv("m.mp4", "o.mp4", "c.srt", plan["style"])
@@ -152,7 +179,6 @@ class NoMaster(unittest.TestCase):
             self.assertFalse((Path(td) / "d").exists())
 
 
-@unittest.skipUnless(BURN_FF, "an ffmpeg with the subtitles filter required")
 class DeliverThePair(unittest.TestCase):
     def setUp(self):
         self.t = Path(tempfile.mkdtemp(prefix="del05-"))
@@ -299,6 +325,62 @@ class DeliverThePair(unittest.TestCase):
         self.assertIn("Sample-Author_Sample-Story/"
                       "05 - Video Clean.mp4", names)
 
+
+class RealRenderOnAFullFrame(unittest.TestCase):
+    """The measured bug, rendered: a 1080x1920 burn must change the pixels.
+
+    The SRT carries no PlayRes, so libass used its 384x288 default canvas and
+    scaled FontSize/MarginV by 1920/288 -- the caption went off the frame and
+    the captioned cut came out PIXEL-IDENTICAL to the clean one. Frame 30
+    (1.0 s, inside the 0.5-1.5 s cue) is the witness.
+    """
+
+    def test_frame_30_carries_the_caption_on_a_1080x1920_master(self):
+        t = Path(tempfile.mkdtemp(prefix="scb-001-playres-"))
+        self.addCleanup(shutil.rmtree, t, ignore_errors=True)
+        master = t / "master.mp4"
+        subprocess.run([BURN_FF, "-y", "-v", "error",
+                        "-f", "lavfi", "-i",
+                        "color=c=0x808080:s=1080x1920:d=2:r=30",
+                        "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        *DA.AUDIO_OUT_ARGS, *DA.FASTSTART_ARGS, str(master)],
+                       check=True)
+        cue = [{"text": LINES[0], "start": 0.5, "end": 1.5}]
+        plan, why = cb.build_plan(LINES[:1], cues=cue, width_px=1080,
+                                  height_px=1920)
+        self.assertIsNone(why)
+        srt = t / "one-cue.srt"
+        srt.write_text(plan["srt"], encoding="utf-8")
+
+        cap, clean = t / "cap.mp4", t / "clean.mp4"
+        for argv, label in (
+                (vd.burn_argv(master, cap, srt.name, plan["style"],
+                              ffmpeg=BURN_FF), "burn"),
+                (vd.clean_argv(master, clean, ffmpeg=BURN_FF), "clean")):
+            proc = subprocess.run(argv, cwd=str(t), capture_output=True,
+                                  text=True, timeout=300)
+            self.assertEqual(proc.returncode, 0,
+                             "%s failed: %s" % (label, (proc.stderr or "")[-400:]))
+
+        cap_g, clean_g = self._frame30(cap, t), self._frame30(clean, t)
+        self.assertEqual(len(cap_g), len(clean_g))
+        diff = sum(1 for a, b in zip(cap_g, clean_g) if a != b)
+        self.assertGreater(
+            diff, 0,
+            "frame 30 is pixel-identical to the un-captioned cut: nothing was "
+            "burned (PlayRes missing from force_style?)")
+        # And it is the plan's WHITE box drawn over the grey master, not noise.
+        self.assertGreater(sum(1 for px in cap_g if px > 200), 1000)
+
+    @staticmethod
+    def _frame30(video, t):
+        out = t / (video.stem + "-f30.gray")
+        subprocess.run([BURN_FF, "-y", "-v", "error", "-i", str(video),
+                        "-vf", "select=eq(n\\,30)", "-frames:v", "1",
+                        "-f", "rawvideo", "-pix_fmt", "gray", str(out)],
+                       check=True)
+        return out.read_bytes()
 
 def _zip_names(path):
     import zipfile

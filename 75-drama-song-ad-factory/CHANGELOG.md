@@ -4,6 +4,52 @@ All notable changes to this skill are documented here. The version of
 record is `skill-version.txt` (kept in agreement with the `SKILL.md`
 frontmatter `version:` field).
 
+## Unreleased - 2026-11-23 - docs: frame rate, H3 text, six looks, gate inventory
+
+Docs-only pass; no code and no version stamp changes here.
+
+- **Frame rate.** Duplicate frames are generated inside clips at their native
+  rate; a 24-to-30 conform cannot remove them and the fix is clip-side (retake
+  or replace). MiniMax H3 joins Hailuo 02 Standard as a native-24 source
+  (`fps_conform.py` maps `minimax`/`h3`/`hailuo` to 24.0). The master runs at
+  the clips' native rate, no interpolation on any shot; a non-30 timeline is
+  the choice-card escape only, with per-clip mpdecimate measurement before
+  assembly and before any paid reuse.
+- **Text.** The H3 prompt carries the planned prop words and never asks for new
+  ones; every H3 clip gets an after-clip eyeball pass for NEW text; a lip-sync
+  take is never admitted on a scan alone.
+- **Looks.** Six looks: Stylized 3D animation (`stylized-3d`) added; Lifelike
+  3D described as clearly animated, not realistic; client wording comes from
+  each mode file's `client_wording` line, guarded against drift.
+- **Gates and records.** The four delivery-blocking codes and the timeline
+  writer codes are named in the docs; the BUILD-RECORD contract and the
+  no-waiver inventory (no `--expects`, no suppression flag) are written; the
+  no-lip-sync opt-out record (`no_lipsync`, `control/method.json`,
+  `LIPSYNC_OPT_OUT_MISSING`) is specified; one sanctioned text/logo overlay
+  stage is recorded; the no-crop/zoom/freeze/stretch/hand-join rule has its
+  body; checks stream beside renders with score-carrying contact sheets; prompt
+  writers fan out one per 2 to 3 prompts with never fewer than one per 6 shots;
+  a plan that names gates carries a self-check table.
+- **Lip-sync model.** Decision 33 is replaced by Trevor's order of 2026-11-23
+  about 2:25 PM: OmniHuman 2.0 (`omnihuman-2-0`) on every run - one picture plus
+  the audio, no prompt, watermark off. Kling Avatar and InfiniTalk are retired;
+  no alternative and no backup (`LIPSYNC_MODEL_MISMATCH`). Its price is 14
+  credits per rounded-up second ($0.07/s), measured.
+- **Lip-sync length.** One piece is one or more whole sentences, 5 to 30
+  seconds, stitched only past 30 (section 3.3a). The 4-to-6-second clip rule and
+  the "more pieces, not longer ones" order are superseded for lip-sync. The 35%
+  figure is a top, not a refusal; under 90 seconds there is no floor of 3
+  pieces; the opening passage sits inside the first 10-15 seconds.
+- **Lip-sync takes.** Every take gets a 4-frames-per-second contact sheet looked
+  at by eye for letters, the Emotion Hold (`EMOTION_DRIFT`) and who is mouthing
+  (`WRONG_VOICE_MOUTHED`); no take enters the timeline without that eye record.
+- **Send pace.** One number everywhere: 20 requests per 15 seconds (S-13), a
+  little under KIE's documented 20 per 10 seconds.
+- **Client and intake text.** The choice card asks Quality Mode (Standard /
+  Premium / Ultra / Hybrid recommended), not a vendor model list; the default
+  story-clip model is H3. The client guide states the logo format intake
+  requires and the sung website form for lyrics and captions.
+
 ## v2.9.205 - 2026-11-20 - a recorded keep_one stops the first take, and the offline dispatch tests run without HOME
 
 - **The bug.** A recorded `keep_one` passed `require_round_auth=True` with an empty reference, but initial allocations skipped both authorization checks, so a song with no prior ledger history was bought despite `keep_one` (the independent probe returned `ok` with one persisted row for that case). Separately, all 14 offline dispatch tests failed under `HOME=/var/empty` because that directory is not writable: the KIE token bucket lives in `~/.cache` unless `DSAF_GOVERNOR_DIR` points elsewhere, so every dispatch failed `[Errno 13] Permission denied`. That failure says nothing about the product path.
@@ -172,6 +218,18 @@ this one stamp. Rounds are recorded in order below.
   client-facing stop and fails when a stop has no table row, a row has fewer
   than two choices, or a message shows a code, a path or a trace.
 
+## v2.9.202 - 2026-11-19 - fix(song): speak first, sing at the drop; lyric doctrine; word timing; pick after operator decision
+
+Lessons from a 3-minute Soul Ballad campaign run, where the first three rounds sang at about 5 s and the lyrics missed the real audience.
+
+- **Suno waits for the drop (suno_recipe, song_contract, suno-v6.json).** On a method run the style text now carries "no singing until the groove drops" and a spoken-backstory sentence in place of "Only the short intro is spoken". `check_pre_erm_opening` refuses a sheet whose spoken words before the first sung line cannot reach the ERM window (PRE_ERM_SPOKEN_SHORT / PRE_ERM_SPOKEN_LONG). `check_pace_style` accepts the method clauses. New Backstory cue.
+- **ERM window (method_plan).** A blueprint ERM outside the method window is refused with ERM_OUTSIDE_WINDOW.
+- **Take judge (song_dispatch).** The ERM apex comes from control/method.json and first singing is measured from word timing when present (the singing detector mis-scored spoken backstory as singing).
+- **Word timing (PREREQS, INSTALL, song_transports).** Model name corrected to `small`; install pre-fetches it and fixes cache ownership; a missing model raises WORD_TIMING_UNAVAILABLE instead of silently empty aligned words.
+- **Memory guard (lane_size).** Free memory is the cgroup working set, so reclaimable page cache no longer refuses local model loads; MiB/GB label fixed.
+- **Website spelling (protected_names).** `url` and `cta_url` from the brief are protected.
+- **Pick after operator decision (song_choices).** `record_pick` honours a recorded, digest-bound WW-21 operator decision for that variant, the same decision `factory music --operator-decision` already accepts.
+- **Doctrine (SKILL.md, INSTRUCTIONS.md, QC.md, EXAMPLES.md).** Write for the brief's real audience; concrete pain checklist; the client's own lines kept in the pain section; spoken backstory plus two sung pain sections before the hero; keep the chosen style; three places that tell Suno to wait; QC rows and a worked example.
 
 ## v2.9.155 - 2026-11-02 - chore(batch): version stamp for batch PR #2784 (ST2, X01, F14, PR #2779)
 

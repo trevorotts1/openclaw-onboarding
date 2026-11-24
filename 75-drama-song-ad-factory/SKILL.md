@@ -1,7 +1,7 @@
 ---
 name: drama-song-ad-factory
 description: End-to-end drama-song advertisement factory on OpenClaw: a sung direct-response story (twelve-beat drama song) carried through intake, preflight, storyboard, shot planning, KIE music/lyric/vocal generation (Suno via Skill 68's createTask contract), timed film assembly (FFmpeg), independent music/timing/QC gates, Command Center ad-campaigns delivery, delivery variants and retake management. Standard-library Python control layer with transactional state, spend ledger with recorded ceilings, bounded worker leases and fail-closed recovery. Same canonical methodology and control CLI as the Claude-Nine / Claude Code distribution (999-setup .claude/skills/drama-song-ad-factory) — one skill folder per runtime, shared core, shared exit codes, no bypass of a failed shared guard. Use when asked to produce a drama song ad or song-driven video ad, or to run intake, preflight, resume or QC gates for an existing drama-song campaign run. Not for motion graphics (use motion-video-plus), plain AI video generation (use 67-kie-video), or landing pages (use blackceo-signature-page).
-version: v2.9.208
+version: v2.9.209
 priority: MEDIUM
 ---
 # Drama Song Ad Factory (Skill 75)
@@ -131,6 +131,16 @@ stands unchanged.
   instrumental opening, keeps ERM -> pain -> Hero Shift order, uses the hook only
   after a local breakthrough, and ends on an end card with show, episode and where to
   watch. Its destination is the episode/channel, never the checkout.
+- **The ERM authority.** The apex comes from `control/method.json`
+  `runtime_targets.erm_apex_s`, and that value wins over the blueprint and over
+  `req.json`. A blueprint whose ERM sits outside the length's window is refused
+  `ERM_OUTSIDE_WINDOW`.
+- **`block_anchors_s` are block END times**, never block starts.
+- **The worked case.** At 180 s the method window is 25-40 s and the apex is
+  32.5 s, so no singing before 30 s.
+- **The opener.** A short spoken `[Intro]` (at most `opener_max` words) plus a
+  spoken `[Backstory]` up to the apex, gated by `check_pre_erm_opening`
+  (`PRE_ERM_SPOKEN_SHORT` / `PRE_ERM_SPOKEN_LONG`).
 
 **The four uses - PURPOSE is question 1 of the card.** 1 Grow my business (a full
 campaign: a full episode plus 60 s and 90 s trailers and 60 s and 90 s ad clips),
@@ -326,6 +336,29 @@ shared guard: every runtime path invokes the same Python control entrypoint
 and the same exit codes BEFORE the affected action, not as an
 after-the-fact audit.
 
+**There is no waiver path, and no flag can suppress a gate.** The assembler's
+real argument list is the whole surface: the positional `timeline` and
+`output`, then `--dry-run`, `--chosen-length-s`, `--ffmpeg`, `--ffprobe`,
+`--timeout`, `--detector-result`, `--target`, `--takes`, `--verdict` and
+`--run-dir` (`assembler.py main()`). There is no `--expects` flag, no waiver
+flag, no suppression flag and no skip switch anywhere in that parser - a
+refusal run searched the argparse block and found `expects` false. A failed
+gate is repaired, or the item is refused; a waiver that would carry it past a
+check is never available, and no run folder or receipt can supply one.
+
+**The no-lip-sync route is a recorded opt-out, not a silent mode (F-ASM-2).**
+The free route exists only when the run owner chooses it, and the choice is a
+literal record the assembler reads: the timeline carries the value
+`no_lipsync`, and `control/method.json` states who chose it and at what time
+(the owner and the timestamp). A timeline that claims `no_lipsync` without that
+record, or with a record that is unreadable or missing its who or its at, is
+refused `LIPSYNC_OPT_OUT_MISSING` (`lipsync_clips.py`); the paid route keeps
+the value `lipsync`. On this route no lip-sync clip exists by design, so
+`FACE_SPEAKS_NO_LIPSYNC` is not raised for a speaking face, while any lip-sync
+clip that does exist must still match its on-screen speaker
+(`LIPSYNC_WRONG_FACE`). The route is never a default, never inferred, and never
+used to skip the lip-sync checks on a run that bought lip-sync jobs.
+
 Build hygiene never reaches the client: drift reports are operator-only and
 silent during a client run. Drift between the installed tree and its source
 (missing files, differing files, a stale distribution, a sync that would
@@ -394,8 +427,8 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
 
 - **Data:** `references/prompt-templates/` - `manifest.json` (caps with their
   source and status, owner bands, layer order, quality rules), `models/`
-  (minimax-h3, kling-video, kling-ai-avatar-standard, suno-v6), `modes/` (the
-  five render modes the looks are built from), `looks/` (the five card looks),
+  (minimax-h3, kling-video, omnihuman-2-0, suno-v6), `modes/` (the six render
+  modes the looks are built from), `looks/` (the six card looks),
   `shot-types/`, `music/` (the eighteen styles), and `length-classes.json`
   (60/90/120/180/300/600 s: shots, H3 clips, lip-sync clips and seconds,
   lanes, hooks, song words, spoken share, product seconds).
@@ -419,6 +452,67 @@ The layers and the assembler are the same in both distributions (U15a-U15i):
   the only table; the card, the planner and QC read it, and
   `prompt_templates.length_class(L)` raises `PROMPT_LENGTH_CLASS_DRIFT` rather
   than let a stale row be read silently.
+- **Prompt writers fan out; a song is never one writer's serial job
+  (F-SPD-4).** The shots' own prompt parts are written in parallel, one writer
+  per 2 to 3 prompts - never fewer writers than one per 6 shots, so 30 prompts
+  means 10 to 15 writers working at once, not one writer walking the song - and
+  each writer writes only its own shots'
+  parts. The old fan-out-NINE warning alone is not enough: it names the
+  mistake but launches no writer. Every writer reads the same spine, Story Beats, Shot Router record and
+  lock file, so the parts cannot drift. One joiner collects the parts, and the
+  Prompt Builder assembles and stamps every payload after the join. A fan-out
+  below the planned number is `CONSERVATIVE_FANOUT`: the missing writers are
+  launched at once, never allowed to leave the batch waiting on one writer.
+
+## Writing the lyrics (script-lyrics stage)
+
+Read this list IN FULL before writing, never grepped: this `SKILL.md`,
+`INSTRUCTIONS.md`, `QC.md`, `EXAMPLES.md`,
+`references/drama-to-demand-method.md` (Steps 1 and 6-12, plus sections 6 and
+7), `references/sensational-openings.md`, and the chosen style's own data in
+`references/prompt-templates/music/<style>.json`. A rule skimmed past is a
+defect; each rule below names the file it protects.
+
+- **R1 - the persona comes from the brief.** Name the singer from the brief's
+  audience, offer and pain (age band, work, family), so the audience hears
+  themselves. Never a generic "I".
+- **R2 - the pain uses the method's checklist.** At least 5 of: hours or jobs
+  with a number; the balance, or "nothing left"; bills by name; dependents;
+  the broken promise (the degree, the career); friends doing better; fear for
+  the future (retirement, travel); the villain as an object (the letter, the
+  bill). First person, present tense, and each line ends on the loss.
+- **R3 - keep the client's own lines.** Client-supplied lines stay in the pain
+  sections, cleaned ONLY for grammar and meter; log the original beside the
+  cleaned line. A phrase the client repeated three times is encouraged.
+- **R4 - the shape.** The spoken backstory plus at least two sung pain sections
+  come before the hero; the hero enters at the Hero Shift, with a musical
+  change.
+- **R5 - call back a concrete image.** The bridge or the hook names a concrete
+  pain image from the pain sections, never a generic one.
+- **R6 - the spoken opening.** `[Intro (spoken)]` at most `opener_max` words
+  (the length plan's number), then `[Backstory (spoken)]`.
+- **R7 - spoken words before the first sung word.** Aim at the minimum plus
+  0-4 words; real speech runs about 1.3-1.6 words/s.
+
+  | Length | Soul Ballad / Soul Rise | R&B Flow |
+  |---:|---|---|
+  | 30 s | 12-16 | 12-18 |
+  | 60 s | 25-33 | 27-36 |
+  | 90 s | 37-46 | 40-50 |
+  | 120 s | 48-59 | 51-64 |
+  | 180 s | 58-74 | 62-80 |
+  | 300 s | 72-92 | 77-100 |
+  | 420 s | 81-103 | 87-112 |
+  | 600 s | 95-120 | 102-130 |
+
+  At 120 s and below reach the count with an `[Instrumental]` lead-in or a
+  longer spoken card.
+- **R8 - the CTA outro** is about 11 words; verify with
+  `spoken_share.check_spoken_word_budget` and `words_fit.preflight_sheet`.
+- **R9 - the style is locked to the card choice.** The card's style is the
+  sheet's style; a sheet is never quietly moved onto another style's rates.
+- **The worked example.** `EXAMPLES.md`, plus the machine-readable golden
+  sheets in `references/prompt-templates/fixtures/suno-sheets/`.
 
 ## Suno song recipe (read this first when you build audio)
 
@@ -430,8 +524,10 @@ refuses a raw Suno style that skipped it.
 
 The four rules (recipe v2, replaces G12):
 
-1. Spoken tags only in [Intro] and [Outro]; spoken is named once in the style
-   text, and the style says the full band keeps playing under the spoken lines.
+1. Spoken tags only in [Intro], [Outro] and, on method runs, a [Backstory];
+   spoken is named once in the style text. On method runs the code swaps
+   "Only the short intro..." for "The full band keeps playing under the
+   spoken lines." (C2).
 2. Sung lines are short (5-6 syllables aimed, 8 at most), rhymed, with
    hyphen-held vowels. A wordless vocalise is OPTIONAL, never a forced
    lead-in: a sheet may open with one short note (a brief lead-in, never
@@ -443,6 +539,25 @@ The four rules (recipe v2, replaces G12):
    true; the hook is the client's own words, repeated by
    length (`core/sung_hook`, `core/sung_hook/hook_placement.py`).
 4. Each take's singing is measured, not taken from its labels.
+
+### Telling Suno to wait (method runs)
+
+The first sung line lands at the ERM apex (C1). These are the words that make
+Suno wait, and each one is checked:
+
+- Every spoken cue ends "... plain natural speaking voice ... no melody, no
+  singing yet".
+- The first sung cue says "the groove drops in here ... first sung line lands
+  on the drop".
+- The final style text carries "no singing until the groove drops"
+  (`suno_recipe.method_pace_clauses`); `song_contract.check_pace_style`
+  refuses a style that is missing it.
+- The hook never opens the song; the hook is the payoff, after its build-up.
+- **R11 - measure, never trust the label.** The first singing is judged by the
+  words' timings on the returned take (install the whisper small model); a
+  "spoken" tag sitting over an early sung word is still a FAIL.
+- **R12 - no composites.** Never splice a spoken opening in from another
+  take; the opening comes from the vocal take itself, so its timing is real.
 
 Word budget, section plan, hook repeats, spoken placement, instrumental breaks
 and the extend plan for any length come from ONE function,
@@ -519,6 +634,21 @@ cap refuses `STYLE_TOO_LONG` rather than dropping a clause. See "Prompt template
 R&B Flow reserves at least max(8 seconds, 10% of the delivered runtime) of measured rhythmic rap before any intro/outro allocation, and each rap verse on the sheet must itself reach a real budget: at least 8 seconds and at least ceil(8 seconds × the style's rap rate) words. Story-bearing lexical content starts within 5 seconds, and no opening wordless span may exceed 3 seconds. Real lexical word timing covers at least 70% of the delivered runtime; vocalise and music-only time never count. Every approved plot beat must be heard, in order, and each take is bound to the exact approved sheet revision it was generated from. Two pace changes are ordered, each separately bound to its own story beat and never merged into one. The first, the problem shift, belongs to the beat where the story hits the problem: it must be written into the submitted music style and must then pass a measured onset and energy drop check. The second, the rise shift, belongs to the beat where the story reaches the solution, the rise: it must be written into the submitted music style and must then pass its own measured rise check. Each pace change must additionally pass an independent smooth-transition review. Required rap evidence that is unmeasured, unavailable or unknown cannot pass; only an independent timed listening review or a calibrated classifier may grant it. These are new acceptance rules; the owner's existing spoken/sung 5/10 band is unchanged. The recommended SONG APPROVAL answer is Yes and an explicit No stays one song, but no assistant may answer a card question on the client's behalf: an answer with no recorded author and no recorded authority is treated as unspecified and routes to the recommended Yes.
 
 **Reconciled music direction (WW-29).** Do not mandate wordless held-note openings or a premature hook; the vocalise is an OPTIONAL one-note lead-in, never a forced opening, and the hook-placement rule above — the hook is the payoff, measured at or after `true_at_beat` — is what the gate measures. R&B Flow consistently directs rhythmic speech-rhythm RAP verses contrasted with a fully sung melodic R&B hook (its own data: `references/prompt-templates/music/rnb-flow.json`, verses tagged rap, hook sung). Cast, pace, hook, ending and the exclusions (`negative_tags`) all survive into the exact serialized request — the createTask envelope's nested `input` — and are checked there by `song_dispatch.validate_request` from every entry path; a style text over the 1000-character cap REFUSES with `STYLE_TOO_LONG` rather than dropping a clause, and no required clause is ever trimmed to fit. Planning timestamps, stretched voice time and text labels never become measured audio. Delivered-audio acceptance has FIVE gates only (WW-21, `song_dispatch.accept_audio_results`): real rap, story start, both pace changes, three audibly different versions including an upbeat option, and multiple character voices — never a sixth. Preserve rejected paid files, there is no automatic paid retry, and nothing regenerates until Trevor approves. Evidence confidence: the adopted techniques are classed in the round-3 plan's citation map as DOCUMENTED (Suno/KIE docs), CONSISTENT (repeated measured runs) or LORE (experience only); no LORE technique grants a PASS without its named measured gate, and the newest individual V6 variant stays UNDETERMINED.
+
+### WW-21: the operator decision is recorded, never a PASS
+
+The delivered-audio boundary (WW-21) is crossed only by a recorded human
+decision, and the order is fixed: `song_dispatch.record_acceptance` (the
+take's own measured rows), then
+`song_dispatch.sha256_evidence_records({vid: song_dispatch.measure_evidence_digest(run_dir, vid)})`
+(the digest the decision is bound to), then
+`song_dispatch.record_operator_decision(run_dir, dec)`, then
+`python3 scripts/core/intake_preflight/factory.py music --run-dir "$RUN"
+--operator-decision <music/acceptance/operator-decision.json>`. A failed gate
+is recorded as FAIL and stays FAIL / NOT PROVEN on the receipt; the decision
+records that the run may advance with those gates unproven. It never writes
+PASS and never rewrites a take record, and a hand-set relabel is refused
+`MANUAL_RELABEL`.
 
 ## Sung hook (I8)
 
@@ -711,9 +841,10 @@ and a VERIFIED or UNVERIFIED status.
   payload is measured AFTER `ending_qc.with_clean_ending` appends the ending, so
   a style that fit before the ending and not after is refused.
 - **Video and avatar:** the vendor cap per model (Hailuo family 2,000, Kling 2.6
-  image-to-video 2,500, MiniMax H3 7,000 with the owner band 5,000-6,800,
-  `kling/ai-avatar-standard` 2,500 UNVERIFIED). `kie_dispatch.dispatch` measures
-  the FINAL payload before any other gate.
+  image-to-video 2,500, MiniMax H3 7,000 with the owner band 5,000-6,800). The
+  lip-sync model `omnihuman-2-0` gets **no prompt** (its page allows an optional
+  300-character prompt, which this skill never sends), so no prompt cap applies.
+  `kie_dispatch.dispatch` measures the FINAL payload before any other gate.
 - A refusal is `PROMPT_OVER_CAP` naming field, characters, cap, source and
   status. Nothing is ever truncated, and a paid video or avatar job with no
   importable limit table is refused `PROMPT_LIMIT_UNAVAILABLE`.
@@ -818,7 +949,11 @@ send the four-part message ("When something stops the work").
   `max_at_once = len(submitted)` (or the provider cap, named in
   `capped_by`, when that binds). Never submit clips in dribbles or wait for
   one clip before sending the next.
-- **KIE rate limit:** new generation submits are paced to 20 or fewer per rolling 10 s per KIE key; a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
+  **NEVER-AGAIN blast lock (binding):** every ready job ships in ONE blast
+  up to the rate limit; a drip split across passes refuses `RETAKE_DRIP`
+  (`core/never_again.py::check_blast`, wired in `retake_manager.plan` and
+  `kie_dispatch.refuse_drip`).
+- **KIE rate limit:** new generation submits are paced to **20 per rolling 15 s** per KIE key (the governor's `KIE_MAX = 20`, `KIE_WINDOW_S = 15.0`, a little under KIE's documented 20 per 10 s, so no test batch is needed - one number everywhere, S-13); a 429 means not run and not queued, so resubmit after a wait. See `references/kie-rate-limit.md`.
 
 ## Agnes path (optional)
 
@@ -844,12 +979,21 @@ only while a key is present; a run without that answer behaves exactly as today.
   submitted), a 429 is backed off and resubmitted, and an unknown job state is polled,
   never resubmitted. Every failure is reported by name; the run never switches
   provider on its own and asks the one fallback question instead.
-- **No words in the generated pictures** by default. A word that will not bake in is
-  overlaid at assembly (`TEXT_OVERLAID`), never delivered garbled; without tesseract
-  the OCR check reads `OCR_UNAVAILABLE`, which is never a PASS.
+- **Words are planned, never model-invented (the H3 path).** Picture prompts
+  carry the exact, short, correct English a prop must show, from the text record;
+  the H3 prompt describes that same writing so the clip animates it. The H3 prompt
+  never asks the model for new words, captions or a watermark, and no prompt leaves
+  props blank where the plan puts words. Every H3 clip is looked at by eye after it
+  lands - a contact sheet read by a vision model or a person - for NEW text before
+  it may enter the timeline; new readable text is MAJOR. The lip-sync model is never
+  asked for words and must add none; a lip-sync take also gets an eye check because
+  a scan alone never admits one. A word that will not bake in is overlaid at
+  assembly (`TEXT_OVERLAID` is the receipt/decision string, not permission to leave
+  a prop blank), never delivered garbled; without tesseract the OCR check reads
+  `OCR_UNAVAILABLE`, which is never a PASS.
 - **Conform:** clips arrive 704x1280 at 24 fps carrying their own audio, which is
   stripped - the song is the only audio - and the master is cover-scaled to its
-  export size and 30 fps.
+  export size at its clips' native rate (24 fps here), never re-timed to 30.
 - **Progress, because it takes hours:** the video stage runs as a background job that
   writes the run's progress record, the studio page shows "Making your video clips:
   N of M done - about X to go" (or the waiting reason), and the stage answers
@@ -982,6 +1126,74 @@ lacks `produced_by.module` and a matching `master_sha256`
 (`final_assembler/master_provenance.py::check_master_provenance`); nothing in
 the run calls it yet.
 
+**The delivery-blocking codes, named exactly as the code emits them.** A master
+that hits any of these refuses delivery, not a warning:
+
+- `LIPSYNC_COVERAGE_SHORT` and `LIPSYNC_LINES_TOO_FEW` (`final_assembler/__init__.py`,
+  re-exported from the coverage and line-count checks) - too little lip-sync, or
+  too few lip-sync lines, for the run.
+- `LIPSYNC_EVIDENCE_MISSING` (`lipsync_evidence.py`) - the per-clip lip-sync
+  evidence row is absent or malformed.
+- `LAST_LINE_OVER_ENDCARD` (`final_assembler/__init__.py`) - the last sung line
+  runs over the end card.
+- `TIMELINE_DUP_FRAMES` (`fps_conform.py`) - the master carries more than the
+  2 percent duplicate-frame cap.
+
+**The timeline-writer codes.** `plan_run_timeline()` (in `assembler.py`) composes
+`edit/timeline.json` from the run folder and writes `TIMELINE_WRITTEN` on
+success. It never invents a default: a missing input is refused as
+`TIMELINE_INPUT_MISSING:<what>` (for example
+`TIMELINE_INPUT_MISSING:motion_score:<shot>`). A hand-built timeline never
+substitutes for `plan_run_timeline`. The sibling lip-sync codes already enforced
+in QC (`FACE_SPEAKS_NO_LIPSYNC`, `LIPSYNC_COVERAGE_BELOW_BAND`, `LIPSYNC_OVER_CAP`,
+`LIPSYNC_DURATION_CONFLICT`) stay; these are added beside them.
+
+**The BUILD-RECORD contract.** Every delivered run ships a BUILD-RECORD,
+written from the session's own verified facts and never from a summary, and QC
+refuses a delivery whose BUILD-RECORD is missing any field: the job (run id and
+the brief it came from); the assembler's path plus the SHA-256 of the file that
+ran; the exact commands issued, verbatim; the SHA-256 of `edit/timeline.json`
+and the `TIMELINE_WRITTEN` receipt from `plan_run_timeline`; one row per shot
+carrying the on-disk SHA-256 of every input used; every gate's verdict per stage
+with its code(s); every refusal and how it was cleared (or that it was not), by
+code; the corrections made after a gate, and why; the checks or steps
+deliberately not run, named; a concurrent-writer note (which output each writer
+owned, one writer per output file); credit reconciliation (reserved against
+actual per stage, plus the ledger's own totals); verification status (measured,
+`UNAVAILABLE`, or passed by a person); the measurement renders, with their
+paths; and every delivered file with its SHA-256. A BUILD-RECORD a reader could
+not reproduce the master from is a provenance FAIL, the same as a missing
+assembler receipt. The full field list is QC.md section 5.2.
+## NEVER-AGAIN LOCKS (binding — 2026-11-21, from fix plan section 7)
+
+One module owns all seven (`core/never_again.py`); each lock below names its
+wired call site. An agent cannot work around them — the refusal fires in code,
+not in prose.
+
+1. **Template-fail lock.** After 2 same-template fails, retakes must change
+   the prompt (drop the stillness line) or stop and report. Never a 3rd
+   identical take (`lipsync_clips.check_try_limit` raises `TEMPLATE_FAIL_LOCK`;
+   `retake_manager.plan` raises it when the cap is also reached).
+2. **Dispatch lock.** Only `kie_dispatch` may submit paid jobs. A direct API
+   post refuses HARD with `NO_DIRECT_SUBMIT` (`lipsync_evidence.check_plan`;
+   `scripts/qc-no-direct-kie.sh` stays the static tripwire).
+3. **Proof rule.** A file named PROOF-ONLY is never a deliverable. Delivery
+   requires Clean plus Captioned plus srt plus QC PASS receipt
+   (`never_again.check_delivery_set`; `assembler.check_proof_output`,
+   `captions_burn.refuse_proof_output`); zero-duration cues refuse
+   `CAPTION_ZERO_DURATION`.
+4. **Gate-edit lock.** Gates change only via repo fix plus tests, never
+   inline (`never_again.check_gate_edit`; timeline second-writer refuses
+   `TIMELINE_WRITER_CONFLICT` in `_write_timeline_atomic`).
+5. **Blast rule.** All ready jobs in ONE blast up to the rate limit. Drips
+   refuse with `RETAKE_DRIP` (`kie_dispatch.refuse_drip`,
+   `retake_manager.plan` drip branch).
+6. **Crop lock.** Any zoom or crop to hide letters refuses with
+   `CROP_REPAIR_REFUSED`; remake instead (`assembler.check_crop_repair`).
+7. **Approval plus waiver receipts.** Approval only via `approve()` with the
+   recorded client reply; waiver only via a Trevor-signed receipt
+   (`approval_runner.check_approval_receipt`, `check_waiver_receipt`).
+
 ## Model and agent choice: the user's choice wins
 
 This skill never picks, forces or recommends a model, an alias or an agent.
@@ -1036,7 +1248,7 @@ already route through it, and a test fails if one stops.
   are never deleted. Every deletion is logged in the receipt; a failed one prints a WARNING.
 - KIE pacing follows `references/kie-rate-limit.md`. Only NEW generation requests (submit
   and create task: image, video, lip-sync, music, extend) draw from the bucket of at most 20
-  per rolling 10 seconds, shared across all processes, one bucket per KIE key. Status polls,
+  per rolling 15 seconds, shared across all processes, one bucket per KIE key. Status polls,
   health checks and record-info reads use a separate gentler limiter (1 request per second
   per process by default, `DSAF_KIE_POLL_INTERVAL_S`) and never consume generation tokens.
   A 429 on a generation request means the job did NOT run and is not queued: back off and
@@ -1065,7 +1277,7 @@ for the whole ad (hard audio-length rule, captions = lyrics, face through the
 call to action), and one repair.
 
 - **ONE shared KIE governor across all lanes** (`SharedGovernor`): at most 20
-  NEW generation requests per rolling 10 s in total, **per-lane share
+  NEW generation requests per rolling 15 s in total, **per-lane share
   floor(18 / N)** (so 3 lanes -> 6 each), and every submit rides
   `load_governor.kie_request`, so a 429 is backed off and **resubmitted, never
   dropped**.
@@ -1077,7 +1289,7 @@ call to action), and one repair.
   twice. Every lane plans against the ONE ledger run, so spend stays under the
   run cap across all lanes together.
 - Tests: `python3 scripts/core/test_lane_planner.py` (180 s -> 3 lanes on shot
-  boundaries; 90 s -> 1 lane; shared governor <= 20 per 10 s across 3 lanes on a
+  boundaries; 90 s -> 1 lane; shared governor <= 20 per 15 s across 3 lanes on a
   fake clock; a ledger-known tag is polled).
 
 ## Installation
@@ -1236,12 +1448,18 @@ distributions. Field-level rules live in `references/choice-card-spec.md`;
 human price snapshot in `references/price-menu.md`; stage order and QC in the
 SOP named above.
 
-- **Video model question.** Four models (MiniMax H3 RECOMMENDED, Seedance 2.5,
-  Seedance 2.0 Mini, Google Veo 3.1), each with its price for the length the
-  client chose. One rates table (`core/choice_card/video_models/
-  video_model_rates.json`) and one price function shared by the question and
-  the final card; the pick is stored in run state, shown on the card and
-  submitted by dispatch with that model's provider id and resolution.
+- **Quality mode question (F-QM-1).** The card asks for a QUALITY MODE:
+  Standard (default) / Premium / Ultra / Hybrid (**RECOMMENDED**), each with a
+  plain-words price for the client's chosen length. Hybrid is recommended,
+  never required: the run owner's recorded pick is the authorization. Ultra
+  reads `ULTRA_MODEL_UNAVAILABLE` when no live KIE model renders 4K. The
+  lip-sync model is **not** a card choice: OmniHuman 2.0 (`omnihuman-2-0`) on
+  every run, no alternative, no backup (S-42). The card face, the mode gate
+  (`scripts/core/quality_modes/mode_gate.py`) and the price rule live in
+  `references/choice-card-spec.md` sections 3.3, 3.6 and 3.8 and
+  `references/quality-modes.json`; copy their wording, never restate it. The
+  default story-clip model is H3 (`minimax-h3/image-to-video`, Trevor decision
+  9); the retired "Hailuo 02 Standard RECOMMENDED" default is gone.
 
 - **Intake.** The run opens with the intro, then the questions: send
   `factory.py card --step --run-state-file <run-state.json>` first (it prints the
@@ -1269,15 +1487,40 @@ SOP named above.
   records `QC_DURATION_OVERSHOOT_SEVERE` with the exact seconds over. An
   overshoot never stops the run - whether a long master is redone belongs to
   the client.
-- **Frame rate (Part H H3, replaces the old "output = the clips' native
-  rate" line and the old "drop frames, never invent them" wording for lip-sync
-  clips):** the master is always 30 fps. Kling clips are native 30 and pass
-  through with no conform filter (every lip-sync frame kept); Hailuo 02
-  Standard clips are native 24 and are motion-interpolated to 30 (never the
-  plain `fps` filter). The assembler refuses any other timeline rate unless
-  the choice card sets it, and checks every segment with mpdecimate (at most
-  2% duplicated frames; a deliberate still is marked `hold`). Settled by
-  S75-048 step 3.
+- **Frame rate (Part H H3): duplicate frames are generated inside the clips,
+  and no timeline rate change can remove them.** Every clip is made at its own
+  native rate and the model itself emits duplicate frames at that rate; a
+  24-to-30 timeline conform cannot take them out and is never the fix. The one
+  fix is clip-side: retake the shot or replace the clip. The master runs at the
+  native rate of its story clips. Native-24 sources are **MiniMax H3** and
+  **Hailuo 02 Standard**, alongside Kling at its own native rate;
+  `fps_conform.py` already maps `minimax`, `h3` and `hailuo` to 24.0, so this
+  rule follows the code. A clip at another rate is matched by
+  plain frame repeat or drop - never by a motion-interpolated conform. The
+  assembler refuses any other timeline rate unless the choice card sets it
+  (`fps_set_by_choice_card`), and refuses a master that fails the cap with
+  `TIMELINE_DUP_FRAMES`. Duplicate frames are measured with mpdecimate on every
+  clip as it lands, before assembly; a clip over the cap is refused and remade
+  clip-side. A deliberate still is marked `hold`; a per-segment duplicate count
+  is advice only while the whole master is under the 2% cap (N-15).
+- **Per-clip native-rate measurement before spend and before assembly.** Each
+  clip's native rate (`ffprobe`) and its duplicate ratio (mpdecimate through
+  `load_governor`) are measured and written on its receipt row at two points:
+  at pre-flight for any clip already on disk that the run intends to reuse,
+  before that clip is paid for again or conformed; and as each new clip lands,
+  before assembly. A clip over the cap is refused at that measurement and
+  remade clip-side (retake or replace); it never reaches assembly and no further
+  paid work is spent on it. The measurement never edits the clip: no
+  timeline-rate change, no frame drop, no interpolation.
+  `fps_set_by_choice_card` is the only non-30 timeline escape, and it passes
+  only when all three hold: the run owner recorded the rate on the choice card,
+  every clip's native rate equals the chosen rate or is matched by plain frame
+  repeat or drop, and every clip's mpdecimate duplicate ratio was measured and
+  is under the cap before assembly. A timeline that fails any of the three is
+  refused (`TIMELINE_FPS_NOT_30` or `TIMELINE_DUP_FRAMES`). Replaces
+  the old "output = the clips' native rate" line and the old "drop frames,
+  never invent them" wording for lip-sync clips, and replaces S75-048 step 3
+  with N-23.
 - **Shapes:** Vertical (9:16) or Wide (16:9), each generated natively - never
   a crop of the other. The card asks these two; there is no "both shapes"
   answer (`intake_card._shape_q`). The "both shapes" promise is a product gap,
@@ -1289,9 +1532,26 @@ SOP named above.
   item 6 of the delivery package, every file through
   `delivery_audio.check_delivery_audio()`). Cutting a clip is free (FFmpeg);
   the AI that picks the moments runs on the client's own AI plan.
-- **Five looks (decision 29):** Lifelike 3D (default), 2D Hand-Painted,
-  Sketch to Life, Canvas to Life, Canvas to 3D. Each look owns its style
-  bible block, its own switching rules and its own QC. The three hybrids
+- **Six looks (decision 29):** Lifelike 3D (default), 2D Hand-Painted,
+  Sketch to Life, Canvas to Life, Canvas to 3D, and **Stylized 3D animation**
+  (`stylized-3d`, the look clients call "Pixar-like": rounded, appealing
+  character shapes, slightly enlarged eyes, simplified skin, soft bounced
+  light, rich color). Each look owns its style bible block, its own switching
+  rules, its own QC and a `client_wording` line. **Client wording comes only
+  from that line:** the guide's line for a look must equal it, whitespace and
+  letter case aside, and the document guard fails when they drift
+  (`CLIENT_WORDING_DRIFT`, `style_defaults.client_wording.check_guide_wording`).
+  Lifelike 3D is described in its mode file's own words - "polished 3D
+  animation with believable, lifelike faces. Clearly animated, never live
+  action" - never "realistic" or "look real"; a
+  client who wants real people is sent to the realism look. A hybrid look has
+  no `client_wording` of its own: it is described by joining the `client_wording`
+  of every mode it switches between, in its `looks/<look>.json` `modes` order.
+  The mapping is
+  fixed once: "Pixar", "Disney-style", "animated movie" and "cartoon 3D" mean
+  Stylized 3D; "real", "real people", "like a movie with actors" mean realism;
+  "Lifelike 3D" alone stays Lifelike 3D; anything unclear gets one question
+  with the samples, never a guess. The three hybrids
   switch sketch or paint to realism (or to lifelike 3D for Canvas to 3D) on
   matched poses, 0.3-0.4 s dissolve, at least 3 seconds held per style, no
   flicker, identity locked; golden realism carries the transformation and
@@ -1321,6 +1581,20 @@ SOP named above.
   return **zero passing frames**; the flagship beat is the positive control.
   Bands are starting values - calibrate on both controls. This is a **planned
   shot with its own storyboard field, never a patch**.
+- **Delivered text and logos: one sanctioned overlay stage (F-ASM-5).** On the
+  final-assembly delivery path, every text or logo element that reaches the
+  master - the end card, the offer lower-third and the burned captions - is
+  applied by exactly one overlay stage: one see-through overlay stream
+  composited over the master in a single ffmpeg pass (`captions_burn.py`'s
+  `overlay_excerpt` builds that stream from the timeline's cues). That single
+  stage is the only sanctioned text/logo overlay in the delivery path. It is
+  distinct from the `DUAL_PRESENCE` sketch alpha overlay above, which is a
+  picture element inside one planned hybrid shot and is drawn against the shot
+  itself, and from `_endcard_filters` in `clip_cutdown/trailer.py` (line 579),
+  which draws the end card on the 60- and 90-second cutdown trailers only and
+  never touches the master. No agent and no run tool adds a second overlay
+  pass, a separate drawtext chain or an outside composite to the master; the
+  one stage is applied once, and its output is named on the receipt.
 - **Music (decision 30, extended catalog):** the card lists the eighteen
   canonical styles from `music_styles.catalog.choice_rows()` - Soul Ballad
   (default, recommended), R&B Flow, Soul Rise, Acoustic Pop, Folk
@@ -1367,16 +1641,25 @@ SOP named above.
   for a FAIL a crop cannot fix, then refuse. Smile and teeth never trigger a regeneration.
   Every picture tried gets a receipt (`<dir>/.lipgate/<sha256>.json`). `upload_measured()`
   uploads the exact measured bytes (hashed at upload time, refused on mismatch) and returns
-  the URL for `input.image_url`. `kie_dispatch.dispatch` REFUSES any `ai-avatar` or
-  `infinitalk` job with `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]`
+  the URL for `input.image_url`. `kie_dispatch.dispatch` REFUSES any
+  `omnihuman-2-0` job with `LIPSYNC_PICTURE_NOT_GATED` unless `request["lipsync_image_path"]`
   has a PASS or ACCEPT_WITH_FLAG receipt for its exact bytes and `input.image_url` is that
-  bound upload. The locked lip-sync model `kling/ai-avatar-standard` passes the F14 video
+  bound upload. The locked lip-sync model `omnihuman-2-0` passes the F14 video
   lock (it is not a menu video model) and goes to this gate. No receipt, FAIL, changed
   file, or mediapipe / face model missing = refused, never a silent pass. Install the model:
   `python3 scripts/core/lip_sync/lip_gate/install_face_model.py` (sha256-pinned, from
   Google's official bucket, to `assets/face_landmarker.task`); mediapipe is declared in
   `PREREQS.json` (`python-mediapipe`, `face-landmarker-model`).
-  The local crop is the one allowed exception to "never cropped" below.
+  The local crop is the one allowed exception to the rule that nothing is
+  cropped, zoomed, frozen, stretched or hand-joined to clear a gate: a clip
+  that fails a check is fixed by a new take or a remake, never by an edit that
+  hides the defect. Picking a different time window of the same clip is
+  allowed; changing the picture to get past the check is not.
+  **NEVER-AGAIN crop lock (binding):** never crop, zoom, freeze, stretch, or
+  hand-join to clear any gate — a repair edit naming crop/zoom/freeze/stretch
+  refuses `CROP_REPAIR_REFUSED` and the shot is remade instead
+  (`core/never_again.py::check_crop_repair`, wired as
+  `final_assembler.assembler.check_crop_repair`).
 - **Lip-sync close-up (owner order 2026-10-08):** the character reference set always
   includes one lip-sync close-up per speaking/singing character. It is MADE from the
   template `lip_gate.closeup_prompt()` (chest-up portrait 9:16, face about 30-40% of the
@@ -1392,7 +1675,7 @@ SOP named above.
   upscaled picture is refused. A picture that fails any point, or one that cannot be
   measured, is refused LOUDLY with every reason and no paid job runs
   (`lip_gate.run_gate(..., source_image=, image_check=)` raises `LipsyncImageRefused`).
-  Every lip-sync job (Kling avatar standard) then uses the picture as its source image.
+  Every lip-sync job (`omnihuman-2-0`) then uses the picture as its source image.
   Once a take exists, a picture-gate number alone is never a reason for a new paid job.
   QC: its mouth region must be sharp and unobstructed (`lip_gate.check_reference_set`);
   a set without it fails.
@@ -1409,57 +1692,58 @@ SOP named above.
   (read-only, real controls); `lip_gate/event_sync.py` is an ADVISORY extra measure
   (onsets, offsets and p/b/m closures against the lead-vocal span) recorded in the receipt
   row as `advisory_event_sync`. It never gates and never triggers a redo.
-- **Lip-sync model order (decision 33):** Kling avatar
-  (`kling/ai-avatar-standard`) is THE lip-sync model (Trevor: clearly the best option) - a
-  front-facing close-up image plus that character's own line cut from the one track's
-  vocal stem. InfiniTalk (`infinitalk/from-audio`) is a MANUAL backup only: never called
-  by the code, never on by default, used only when a person asks for it by hand.
-  **Volcengine is dropped**. Tight
-  close-ups only. The lip-sync input contains only the on-screen speaker's
-  line: never a narrator, never another character. Narrator, phone,
-  voicemail and laptop voices may play as voice-over but are never lip-synced
-  onto a person. Lip-sync applies to the pain peak, the product line, the
-  call to action and the chorus hook. Approved direction 2026-10-23 (supersedes
-  the 2026-10-08 doubling): coverage is **25-30% of the selected duration with a
-  35% HARD MAXIMUM**, in 4 to 6 second clips, no clip over 6 seconds, never
-  fewer than 3 clips, and the first **12 seconds** clearly articulated
-  (`core/lipsync_clips.py` is the one source). Clips go on every sung hook, the
-  spoken opener and the spoken closing line first. Each clip is a paid
-  `kling/ai-avatar-standard` job, so the lip-sync cost roughly doubles: the card
-  prices it through Skill 74 and a plan that would pass the spend cap is refused
+- **Lip-sync model: OmniHuman 2.0 on every run (S-42; Trevor, 2026-11-23 about
+  2:25 PM).** The model is `omnihuman-2-0`: one picture in `image_urls` plus one
+  audio piece, **no prompt**, `enable_watermark` false. There is no option
+  menu, no alternative and no backup; Kling Avatar and InfiniTalk are retired
+  and nothing in a run picks another model (`LIPSYNC_MODEL_MISMATCH`). The
+  picture is made in step 2 from the character's master, the scene's wardrobe
+  picture and the expression sheet that matches the sentence's emotion (3G.5),
+  and it shows only the people who sing that piece, large in frame (1 to 3
+  faces). Tight close-ups only. The audio is one **whole sentence or phrase, 5
+  to 30 seconds** (section 3.3a): never cut mid-sentence, never padded, stitched
+  only when a passage is longer than 30 seconds. The lip-sync input contains
+  only the on-screen singer's line, cut from the track the Voice Map names for
+  that stretch (3N.0): never a narrator, never another character. Lip-sync
+  applies to the opening passage, the pain peak, the product line, the call to
+  action and the chorus hook. Coverage is **25-30% of the selected duration**,
+  with **35% as a top, not a refusal** (whole sentences win; a plan over 35%
+  shows its seconds and percent before any spend). Under 90 seconds there is no
+  floor of 3 pieces; from 90 seconds up the floor of 3 stands. The opening
+  passage is lip-synced inside the first 10-15 seconds (N-05).
+  `core/lipsync_clips.py` is the one source. Each piece is a paid
+  `omnihuman-2-0` job at **14 credits per second of the rounded-up clip**
+  ($0.07/s): a 60 s ad's 15-18 s is about $1.05-$1.26 per try. The card prices
+  it through Skill 74 and a plan that would pass the spend cap is refused
   loudly (`lipsync_clips.check_budget`), never trimmed or run past the cap. The
-  list is shown on the approval card; every other shot stays as the video
-  model made it. For an All Suno run the isolated line is cut from the one
-  track's vocal stem by Skill 74's `ai-music-api/separate-vocals`; the stem
-  is only the lip-sync input, never in the final mix.
-  The avatar prompt itself is assembled by `prompt_templates`
-  (`assemble_kling_avatar`): three sentences, one emotion, and the `who`
-  descriptor taken from the look's mode - see "Prompt templates" above.
-  **How a clip is cut, prompted, measured and retried (LSR001 + LSC001, 2026-10-08):**
-  (1) The input is the lead-vocal STEM only, never the mix. `lipsync_clips.choose_window`
-  picks the 4-6 s window from the Suno word timestamps: it starts at a word start and
-  ends at a word end (a real rest where one exists), then adds 0.30 s before and 0.20 s
-  after from try 1 (`stem_offset.cut_plan` corrects the stem lateness); at least 1.5
-  word onsets per second, no held word over 1.2 s (else marked `HELD_NOTE`), words with
-  p, b, m, f, v, w preferred, and a different line of a hook that is sung 2-3 times.
-  (2) The prompt (`lip_gate.kling_prompt`) says "sings" on sung lines and "says" on
-  spoken ones, one emotion, minimal head movement, steady locked camera; it never tells
-  the mouth to move in time (the audio does that). (3) The sync gate is `sync_check`
-  (calibrated on real controls, see the sync-check bullet above); `event_sync` is advisory
-  only. (4) **Two tries, then the best take (Trevor 2026-10-08):** at most 2 paid
-  `kling/ai-avatar-standard` jobs per segment, every name variant counted
-  (`lipsync_clips.check_try_limit`; `run_gate(prior_jobs=)` raises `LipTryLimit` before a
-  3rd). Try 2 runs only on a PERSON'S call (rule 4 of the lip-sync process bullet below)
-  and only with a CHANGED input (the next-best window or the padded cut); no checker
-  verdict, FAIL included, ever triggers it. After that the best-measured take is kept and
-  the receipt says `KEPT_BEST_OF_2 (tN), verdict, numbers, flag` with a mouth-strip path.
-  No third job, no model switch. The card prices the worst case at 2 tries
-  (`check_budget(..., attempts=2)`). Every paid submit goes through
-  `load_governor.kie_request`; landmark extraction through `heavy_slot`. The Kling-avatar-first
-  order itself is a **rule
-  followed by the agent; code check not yet shipped**: `scripts/core/lip_sync/`
-  carries `narrator_rule/` only, no `kling_first/` (see CHANGELOG.md
-  "Not shipped here, on record").
+  list is shown on the approval card; every other shot stays as the video model
+  made it. The audio is cut in stage 1 by the one `split_stem` job (3N.2); it is
+  only the lip-sync input, never in the final mix. **There is no prompt**: with
+  no prompt, the picture carries the expression, and the take is checked for it
+  (3G.6).
+  **How a piece is cut, measured and retried (3.3a + 3C.1a):**
+  (1) `lipsync_clips.choose_window` returns the whole phrase, first word's start
+  to last word's end, 5 to 30 seconds. A held note or a slow passage is a flag on
+  the receipt, never a reason to move, shorten or drop the line. A passage over
+  30 seconds returns a stitch group split at a breath or a line boundary, and
+  the pieces are joined back to back naming each join.
+  (2) No prompt is sent. (3) The sync gate is `sync_check` (calibrated on real
+  controls, see the sync-check bullet above); `event_sync` is advisory only.
+  Every take also gets a 4-frames-per-second contact sheet looked at by eye for
+  letters, emotion and who is mouthing; no take enters the timeline without that
+  eye record (`LIP_TAKE_NOT_EYE_CHECKED`, `EMOTION_DRIFT`, `WRONG_VOICE_MOUTHED`).
+  (4) **Two tries, then the best take (Trevor 2026-10-08):** at most 2 paid
+  `omnihuman-2-0` jobs per segment, every name variant counted
+  (`lipsync_clips.check_try_limit`; `run_gate(prior_jobs=)` raises `LipTryLimit`
+  before a 3rd). Try 2 runs only on a PERSON'S call (rule 4 of the lip-sync
+  process bullet below) and only with a CHANGED input; no checker verdict, FAIL
+  included, ever triggers it. After that the best-measured take is kept and the
+  receipt says `KEPT_BEST_OF_2 (tN), verdict, numbers, flag` with a mouth-strip
+  path. No third job, no model switch. An "overloaded" refusal costs 0 and is
+  resent at once, then every 30 seconds, up to 5 sends, inside the same stage.
+  The card prices the worst case at 2 tries (`check_budget(..., attempts=2)`).
+  Every paid submit goes through `load_governor.kie_request`; landmark
+  extraction through `heavy_slot`.
 - **Lip-sync process (Trevor approved, 2026-10-08, first used on a client's
   ads; LSP001, built on LSC001).** Every run follows these six rules
   (`lip_sync/lip_gate/lip_process.py`):
@@ -1481,10 +1765,10 @@ SOP named above.
   5. **Edit placement.** Trim each Kling clip to its audio length (Kling pads the
      tail); place it at the Suno word timestamp, corrected by the measured stem offset
      (`stem_offset.py`; it was 66 ms late); upscale 720x1280 to 1080x1920 with lanczos;
-     conform to the 30 fps master under the "Frame rate (Part H H3)" rule above,
-     which replaced the old DROPPING frames rule for lip-sync clips (a native-30
-     Kling clip passes through; a 24 fps source is
-     motion-interpolated, never the plain `fps` filter); all ffmpeg through
+     conform to the master's native rate under the "Frame rate (Part H H3)" rule above,
+     which replaced the old DROPPING frames rule for lip-sync clips (a native-rate
+     Kling clip passes through; a clip at another rate is matched by plain frame
+     repeat or drop, never a motion-interpolated conform); all ffmpeg through
      `load_governor` (`heavy_slot`, bounded threads) (`edit_plan`).
   6. **QC.** Checklist items 8 and 11 accept `KEPT_BEST` and flagged rows that carry a
      strip path (`lip_gate.qc_check`). A receipt row lists the take kept, jobs used
@@ -1535,15 +1819,16 @@ SOP named above.
   listing every file, duration, resolution and banner link:
   `scripts/core/batch_zip/batch_zip.py build_batch_zip(client, ads,
   out_path)`.
-- **Pricing:** the VIDEO MODEL line comes from the one rates table,
-  `scripts/core/choice_card/video_models/video_model_rates.json`, through the
-  shared price function (`card_render.price_envelope`): video + one keyframe
-  per shot + the character reference pictures + the song, then the planning
-  allowance. Skill 74 `price` returns the highest listed tier, so the chosen
-  model's video line is priced from that table instead. Every OTHER figure on
-  the card - the chosen shape, lip-sync close-ups, voice packs, clips and the
-  batch total - comes from Skill 74 `price`. This skill never hard-codes a
-  rate.
+- **Pricing:** the QUALITY MODE line comes from the mode card's own price rule
+  (`references/choice-card-spec.md` sections 3.3 and 3.6;
+  `scripts/core/quality_modes/`), through the shared price function
+  (`card_render.price_envelope`): video + one keyframe per shot + the character
+  reference pictures + the song, then the planning allowance. Skill 74 `price`
+  returns the highest listed tier, so the chosen mode's video line is priced
+  from that table instead. Every OTHER figure on the card - the chosen shape,
+  lip-sync close-ups (`omnihuman-2-0`, 14 credits per rounded-up second), voice
+  packs, clips and the batch total - comes from Skill 74 `price`. This skill
+  never hard-codes a rate.
 - **Command Center:** one parent card and twelve stage cards per ad, one
   deliverable per ad, and one parent card per batch; department lead role
   `vsl-video-sales-letter-specialist`.
@@ -1633,10 +1918,14 @@ it and the check that proves it; nothing below describes a plan.
    sending a request that follows a different story. Check:
    `music_director/test_blueprint_inputs_s75xw4u2.py`.
 7. **Lip-sync coverage is a share of the ad, not a fixed block.** Target
-   25-30% of the selected duration, 35% HARD maximum, clips 4-6 s, never fewer
-   than 3, and the first 12 s clearly articulated (the first clip must start
-   inside the opening window, else `LIPSYNC_OPENING_NOT_ARTICULATED`; a plan
-   over the maximum fails `LIPSYNC_OVER_CAP`; bounds that cannot all hold fail
+   25-30% of the selected duration; **35% is a top, not a refusal** (whole
+   sentences win, and a plan over 35% shows its seconds and percent before any
+   spend). One piece is one or more whole sentences, 5 to 30 seconds, stitched
+   only past 30. Under 90 seconds there is no floor of 3 pieces; from 90 seconds
+   up the floor of 3 stands. The opening passage is lip-synced inside the first
+   10-15 seconds (N-05). A single piece over 30 seconds fails
+   `LIPSYNC_AUDIO_TOO_LONG` with the stitch named as the fix; bounds that cannot
+   all hold fail
    `LIPSYNC_DURATION_CONFLICT`). The numbers live in `core/lipsync_clips.py`
    and supersede the 2026-10-08 doubling order. Checks:
    `test_lipsync_clips.py`, `final_assembler/test_lipsync_coverage_e6.py`,

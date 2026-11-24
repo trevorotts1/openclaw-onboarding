@@ -21,7 +21,7 @@ What this module owns and nothing else:
 
 1. the **card Voice row for a chosen look** -- ``voice_options_for()`` /
    ``voice_line()`` / ``card_voice_block()`` hand the card the two voice
-   options for four looks, and for ``sketch-to-life`` Velvet Voiceover comes
+   options for five looks, and for ``sketch-to-life`` Velvet Voiceover comes
    back either **disabled** (default: still listed, ``selectable`` is False,
    with the unavailable note) or **hidden** (``mode="hide"``: dropped from the
    line entirely). All Suno stays the default on every look (Decision 27).
@@ -104,7 +104,7 @@ SOURCE = "Decision log 38 (D25 Sketch to Life) 2026-10-07; plan 6.12.1, 4.1"
 STL_LOOK_ID = "sketch-to-life"
 STL_LOOK_LABEL = "Sketch to Life"
 
-#: The other four keeps. LOOK_ORDER is the card's own five-look menu.
+#: The other keeps. LOOK_ORDER is the card's own six-look menu (N-37).
 STL_OTHER_LOOKS = tuple(lid for lid in LOOKS.LOOK_ORDER if lid != STL_LOOK_ID)
 
 # ---- voice ids come from the Velvet module; never redefined here -----------
@@ -180,7 +180,7 @@ class StlGuardError(Exception):
 
 # ---------------------------------------------------------------- look -----
 def resolve_look(look=None):
-    """Look id via the card's own five-look menu; a refusal becomes ours."""
+    """Look id via the card's own six-look menu; a refusal becomes ours."""
     try:
         return LOOKS.resolve_look(look)
     except Exception as exc:                    # noqa: BLE001

@@ -109,6 +109,29 @@ SMILING_CODE = "LIPSYNC_SOURCE_SMILING"
 SMILING_FLAGS = frozenset({"SMILE"})   # a smile with or without visible teeth
 REGEN_MODEL = "gpt-image-2-image-to-image"
 REGEN_PROMPT = "neutral expression, lips closed, facing camera, head level"
+
+
+def regen_prompt(emotion=None, intensity=2):
+    """N-118 / 3G.5: the remake prompt carries the SENTENCE's expression.
+
+    With no tag the fixed neutral wording stands (older callers unchanged).
+    With a tag, the facial-cue wording comes from the Emotion Track's own
+    reader (face_emotion.picture_expression), one step stronger on pain lines;
+    when that reader is not installed the tag and its strength are stated
+    plainly, never invented as cues.
+    """
+    if not emotion:
+        return REGEN_PROMPT
+    try:
+        import sys as _sys, os as _os
+        _core = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..", ".."))
+        if _core not in _sys.path:
+            _sys.path.insert(0, _core)
+        from face_emotion import face_emotion as _FE
+        wording = _FE.picture_expression(emotion, intensity)
+    except Exception:                      # reader absent: say the tag plainly
+        wording = "%s expression at intensity %s" % (emotion, intensity)
+    return ("%s, lips closed, facing camera, head level" % (wording,)).strip(", ")
 # ============================================================================
 
 PASS, FLAGGED, FAIL = "PASS", "ACCEPT_WITH_FLAG", "FAIL"
@@ -289,7 +312,8 @@ def _measure_all(cur, measure):
 
 def gate_picture(path, receipt_dir=None, measure=None, crop=None,
                  regenerate=None, max_regens=MAX_PAID_REGENS,
-                 ladder=None, no_smile=False, remake=None, max_remakes=MAX_REMAKES):
+                 ladder=None, no_smile=False, remake=None, max_remakes=MAX_REMAKES,
+                 emotion=None, intensity=2):
     """Measure one close-up; fix it; write a receipt per picture tried.
     Returns {"verdict", "image", "sha256", "numbers", "reasons", "flags",
     "attempts"} for the FINAL picture (its path is "image"; use it, not the
@@ -321,6 +345,10 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
     crop(path, out) -> out|None     default picture_measure.crop_to_face (free)
     ladder(path, out, width) -> out|None   default upper_centre_crop (free)
     """
+    # N-118 / 3G.5-3G.6: with no tag the fixed neutral wording stands. With a
+    # tag the remake prompt carries the SENTENCE's expression, one step
+    # stronger on pain lines -- the picture is the only control OmniHuman gets.
+    prompt = regen_prompt(emotion, intensity)
     measure = measure or PM.measure
     crop = crop or (lambda p, o: PM.crop_to_face(p, o, CROP_TARGET_FACE_PCT))
     ladder = ladder or upper_centre_crop
@@ -365,7 +393,7 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
         if smiling and verdict in ACCEPTED:                  # free remake, capped
             remakes += 1
             try:
-                cur = remake(cur, REGEN_PROMPT)
+                cur = remake(cur, prompt)
             except Exception as exc:                         # refuse, loudly
                 reasons = reasons + [("REMAKE_FAILED", "%s: %s" % (type(exc).__name__, exc))]
                 attempts = attempts + [dict(attempts[-1], verdict=FAIL,
@@ -414,7 +442,7 @@ def gate_picture(path, receipt_dir=None, measure=None, crop=None,
                                         attempts, rdir), cur, ceiling=ceil)
         regens += 1                                          # paid, capped
         try:
-            cur = regenerate(cur, REGEN_PROMPT)
+            cur = regenerate(cur, prompt)
             op["last"] = OPERATION_REGENERATE                # a NEW picture
         except Exception as exc:                             # refuse, loudly
             reasons_now = rec["reasons"] + [

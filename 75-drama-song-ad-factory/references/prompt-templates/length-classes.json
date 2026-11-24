@@ -1,5 +1,5 @@
 {
-  "_source": "length_formula.plan() + lipsync_clips.budget() + shot_planner.plan_generation_count (4 s target) + lane_planner (W-G-008; formula fallback while the module is not on this branch) + U13 product band, on the U15h branch; every row is proved equal to the code by prompt_templates.length_class / test_length_classes_u15h.py",
+  "_source": "length_formula.plan() + lipsync_clips.budget() + shot_planner.plan_generation_count (4 s target) + lane_planner (W-G-008; formula fallback while the module is not on this branch) + U13 product band, on the U15h branch; every row is proved equal to the code by prompt_templates.length_class / test_length_classes_u15h.py; N-101: lipsync_clip_s is [5, 30] per Trevor's November 23 order; clip counts and seconds regenerated from CLIP_MIN_S=5.0 / CLIP_MAX_S=30.0 (U-PLAN).",
   "classes": {
     "60": {
       "chosen_s": 60,
@@ -7,20 +7,20 @@
       "bracket": "60s",
       "shots_total": 15,
       "lipsync_clips": [
-        3,
-        5
+        1,
+        4
       ],
       "lipsync_seconds": [
         14.5,
         17.4
       ],
       "lipsync_clip_s": [
-        4,
-        6
+        5,
+        30
       ],
       "h3_shots": [
-        10,
-        12
+        11,
+        14
       ],
       "h3_seconds": [
         40.6,
@@ -67,20 +67,20 @@
       "bracket": "90s",
       "shots_total": 22,
       "lipsync_clips": [
-        4,
-        7
+        1,
+        6
       ],
       "lipsync_seconds": [
         22.0,
         26.4
       ],
       "lipsync_clip_s": [
-        4,
-        6
+        5,
+        30
       ],
       "h3_shots": [
-        15,
-        18
+        16,
+        21
       ],
       "h3_seconds": [
         61.6,
@@ -127,20 +127,20 @@
       "bracket": "2min",
       "shots_total": 30,
       "lipsync_clips": [
-        5,
-        10
+        3,
+        8
       ],
       "lipsync_seconds": [
         29.5,
         35.4
       ],
       "lipsync_clip_s": [
-        4,
-        6
+        5,
+        30
       ],
       "h3_shots": [
-        20,
-        25
+        22,
+        27
       ],
       "h3_seconds": [
         82.6,
@@ -188,20 +188,20 @@
       "bracket": "3min",
       "shots_total": 45,
       "lipsync_clips": [
-        8,
-        15
+        3,
+        12
       ],
       "lipsync_seconds": [
         44.5,
         53.4
       ],
       "lipsync_clip_s": [
-        4,
-        6
+        5,
+        30
       ],
       "h3_shots": [
-        30,
-        37
+        33,
+        42
       ],
       "h3_seconds": [
         124.6,
@@ -249,20 +249,20 @@
       "bracket": "5min",
       "shots_total": 75,
       "lipsync_clips": [
-        13,
-        26
+        3,
+        20
       ],
       "lipsync_seconds": [
         74.5,
         89.4
       ],
       "lipsync_clip_s": [
-        4,
-        6
+        5,
+        30
       ],
       "h3_shots": [
-        49,
-        62
+        55,
+        72
       ],
       "h3_seconds": [
         208.6,
@@ -310,20 +310,20 @@
       "bracket": "10min",
       "shots_total": 150,
       "lipsync_clips": [
-        25,
-        52
+        5,
+        41
       ],
       "lipsync_seconds": [
         149.5,
         179.4
       ],
       "lipsync_clip_s": [
-        4,
-        6
+        5,
+        30
       ],
       "h3_shots": [
-        98,
-        125
+        109,
+        145
       ],
       "h3_seconds": [
         418.6,

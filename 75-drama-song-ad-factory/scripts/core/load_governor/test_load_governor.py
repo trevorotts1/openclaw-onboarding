@@ -306,7 +306,7 @@ except KD.DispatchError as exc:
 
 # docs agree with references/kie-rate-limit.md
 SK = os.path.join(CORE, "..", "..")
-check("constants match KIE docs (20 per 10 s)", (LG.load_governor.KIE_MAX, LG.load_governor.KIE_WINDOW_S) == (20, 10.0))
+check("constants match plan S-13 (20 per 15 s)", (LG.load_governor.KIE_MAX, LG.load_governor.KIE_WINDOW_S) == (20, 15.0))
 skill_md = open(os.path.join(SK, "SKILL.md"), encoding="utf-8").read()
 check("SKILL.md says generation-only 20 per 10 s, polls separate",
       "NEW generation" in skill_md and "never consume generation tokens" in skill_md)

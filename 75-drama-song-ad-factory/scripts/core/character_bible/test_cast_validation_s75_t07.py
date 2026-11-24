@@ -615,6 +615,57 @@ def test_round8_vocabulary_is_not_read_on_import():
     assert CV.content_lexicon()["words"], "vocabulary did not load"
 
 
+def test_cast_lock_refuses_unlocked_member():
+    """N-119: every cast entry needs a locked reference set before any picture."""
+    manifest = {"cast": [{"character_id": "lead"}, {"character_id": "mother"}]}
+    lock = {"characters": {"lead": ["lead-master.png", "lead-robe.png"]}}
+    packet = CV.validate_cast_lock(manifest, lock_file=lock)
+    issues = {d["issue"] for d in packet["defects"]}
+    assert not packet["ok"], packet
+    assert CV.CAST_REFERENCE_MISSING in issues, issues
+
+
+def test_cast_lock_lineup_and_identity_block():
+    """N-119: look-alike pair and a pasted identity block are both refused."""
+    lineup = [
+        {"character_id": "lead", "age": "34", "hair": "black bun",
+         "build": "slim", "silhouette": "tall"},
+        {"character_id": "mother", "age": "34", "hair": "black bun",
+         "build": "slim", "silhouette": "tall"},
+    ]
+    packet = CV.validate_cast_lock(
+        {"cast": [{"character_id": "lead"}, {"character_id": "mother"}]},
+        lineup=lineup,
+        identity_blocks={"lead": "black bun, slim, 34", "mother": "black bun, slim, 34"})
+    issues = {d["issue"] for d in packet["defects"]}
+    assert CV.CAST_LOOKALIKE in issues, issues
+    assert CV.IDENTITY_BLOCK_WRONG_CHARACTER in issues, issues
+
+
+def test_cast_lock_shot_cast_membership():
+    """N-119: an unlisted face and a missing cast member are both refused."""
+    packet = CV.validate_cast_lock(
+        {"cast": [{"character_id": "lead"}, {"character_id": "mother"}]},
+        shots=[{"shot_id": "T17", "cast_ids": ["lead", "mother"],
+                "seen_people": ["lead", "stranger"]}])
+    issues = {d["issue"] for d in packet["defects"]}
+    assert CV.UNLISTED_PERSON in issues, issues
+    assert CV.CAST_MEMBER_MISSING in issues, issues
+
+
+def test_cast_lock_clean_case_passes():
+    """N-119: a fully locked cast with matching line-up passes."""
+    manifest = {"cast": [{"character_id": "lead"}]}
+    lock = {"characters": {"lead": ["lead-master.png"]}}
+    lineup = [{"character_id": "lead", "age": "34", "hair": "black bun",
+               "build": "slim", "silhouette": "tall"}]
+    packet = CV.validate_cast_lock(
+        manifest, lock_file=lock, lineup=lineup,
+        identity_blocks={"lead": "black bun, slim, 34"},
+        shots=[{"shot_id": "T01", "cast_ids": ["lead"], "seen_people": ["lead"]}])
+    assert packet["ok"], packet
+
+
 if __name__ == "__main__":
     tests = [(name, fn) for name, fn in sorted(globals().items())
              if name.startswith("test_") and callable(fn)]

@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(SKILL / "scripts"))
+sys.path.insert(0, str(SKILL / "scripts" / "core"))
 
 import camera_signatures as cs  # noqa: E402
 

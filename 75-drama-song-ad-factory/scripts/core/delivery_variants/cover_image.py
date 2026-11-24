@@ -11,7 +11,8 @@ made, so it costs nothing and invents nothing:
     shot-list order by :func:`select_frame`;
   * the TITLE is the approved script's title (``$RUN/creative/script.json``,
     the same file ``script_approval.stage`` reads), falling back to the
-    brief's title -- never an invented one;
+    brief's title, then to a run manifest/plan record that already names one
+    (F-EOC-3) -- never an invented one;
   * the storyboard gate must be open (``approval_runner.gate_open``): an
     unapproved still is not a frame selection and may not be shipped;
   * the render is one ffmpeg pass through ``load_governor.run_ffmpeg``,
@@ -170,13 +171,47 @@ def _read_json(path, default=None):
         return default
 
 
+#: F-EOC-3: run records that may name the title when the script and the
+#: brief carry none -- the run manifest/plan records the run wrote itself.
+TITLE_RECORDS = (
+    os.path.join("control", "run-state.json"),
+    os.path.join("song-choices", "state.json"),
+    os.path.join("control", "plan-revision.json"),
+)
+TITLE_KEYS = ("title", "ad_title", "approved_ad_title", "song_title")
+
+def _title_in(doc, depth=3):
+    """The first non-empty title string inside a run record, else None.
+
+    Only a recorded title counts: a dict is searched for the known keys
+    first, then by value, bounded so a huge manifest cannot stall the read.
+    """
+    if depth < 0:
+        return None
+    if isinstance(doc, dict):
+        for key in TITLE_KEYS:
+            value = doc.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        for value in doc.values():
+            got = _title_in(value, depth - 1)
+            if got:
+                return got
+    elif isinstance(doc, list):
+        for value in doc:
+            got = _title_in(value, depth - 1)
+            if got:
+                return got
+    return None
+
 def _title_and_source(run_dir):
-    """(title, the run file it came from) -- script first, then the brief.
+    """(title, the run file it came from) -- script, then brief, then a run
+    manifest/plan record (F-EOC-3).
 
     The script path constant is imported from ``script_approval.stage`` --
     the same file that sends the script to the client, so a cover can never
-    carry a title the client never approved. Raises COVER_NO_TITLE when
-    neither file carries a non-empty title (fail closed: no invented words).
+    carry a title the client never approved. Raises COVER_NO_TITLE only when
+    no run record names one (fail closed: no invented words).
     """
     core = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if core not in sys.path:
@@ -189,9 +224,13 @@ def _title_and_source(run_dir):
             value = doc.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip(), rel
+    for rel in TITLE_RECORDS:
+        got = _title_in(_read_json(os.path.join(run_dir, rel)))
+        if got:
+            return got, rel
     raise CoverImageError(NO_TITLE,
-                          "neither %s nor %s carries a non-empty title"
-                          % (SCRIPT, BRIEF))
+                          "no run record names a title (%s, %s, or %s)"
+                          % (SCRIPT, BRIEF, ", ".join(TITLE_RECORDS)))
 
 
 def title_of(run_dir):

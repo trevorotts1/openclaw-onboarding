@@ -4,11 +4,22 @@ Usage: runner = skill74_runner(run_dir, uploader, dispatch_kwargs, isolation_rea
 produce(run_dir, run_id, shot_id, song_path, runner) returns a stem for upload_stem.
 No operation occurs until produce is called.
 
-A song is separated ONCE. ``produce`` reads ``music/vocal-stem.mp3`` first; when
-it is absent it runs one ``separate-vocals`` job keyed ``logical_key="vocal-stem"``
-(so the ledger refuses a second), publishes ``music/vocal-stem.mp3`` and
-``music/instrumental.mp3``, and every lip-sync clip cuts from that one stem. The
-delivery stage reads the same two files.
+A song is separated ONCE, with the plain ``split_stem`` type (plan section 3N;
+requirement N-117): 12 tracks come back, of which the lead (``music/vocals.mp3``)
+and the clean backing (``music/backing-vocals.mp3``) are kept and fingerprinted
+in the separation receipt. ``produce`` reads ``music/vocal-stem.mp3`` first; when
+it is absent it runs one ``split_stem`` job keyed ``logical_key="vocal-stem"``
+(so the ledger refuses a second) and publishes the lead, the backing when the
+job returns one, and ``music/instrumental.mp3``. A piece cuts from its own
+role's track (a lead piece from ``vocals.mp3``, a backing/choir piece from
+``backing-vocals.mp3``). ``music/vocal-stem.mp3`` is kept as the delivery
+contract's copy of the lead track. Match the returned tracks by the stem name
+in each file name, never by their order.
+
+``split_stem_advanced`` is not used: test V8 showed its lead is no cleaner and
+it adds 20 credits a song. Section 3N.0: a lead alone is shown only where the
+backing track is silent, because nothing tested can stop a face mouthing words
+that are not its own.
 
 The injected separation runner must use the existing Skill 74 approved dispatch
 route. No default provider transport or retrospective receipt import is provided.
@@ -27,14 +38,27 @@ from style_defaults.card_gate import gate_run_state
 
 MODEL = "ai-music-api/separate-vocals"
 SCHEMA = "blackceo.lipsync-production/v1"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
-#: The song's one vocal stem and one instrumental, beside the mix. Delivery
-#: reads exactly these names; every lip-sync clip cuts from the vocal stem.
+#: One job per song: the plain ``split_stem`` type (3N.2 step 1; V1 passed).
+SPLIT_TYPE = "split_stem"
+
+#: The song's tracks, beside the mix. ``vocal-stem.mp3`` is the delivery
+#: contract's copy of the lead track; ``vocals.mp3`` and
+#: ``backing-vocals.mp3`` are the role tracks (3N.9).
 STEM_NAME = "vocal-stem.mp3"
+LEAD_NAME = "vocals.mp3"
+BACKING_NAME = "backing-vocals.mp3"
 INSTRUMENTAL_NAME = "instrumental.mp3"
 STEM_LOGICAL_KEY = "vocal-stem"
 SEPARATION_RECEIPT = "vocal-stem.json"
+
+#: Roles the Voice Map feeds the backing track (one definition, 3N.0). An
+#: overlap shows the backing singers, so it rides the backing track too.
+from voice_map.voice_map import ROLE_TRACKS, TRACK_BACKING
+BACKING_ROLES = frozenset(
+    role for role, track in ROLE_TRACKS.items() if track == TRACK_BACKING
+) | {"overlap"}
 
 
 def _record(path, rec):
@@ -44,11 +68,44 @@ def _record(path, rec):
 
 
 def _music_paths(root):
-    """The two stem files this producer publishes, beside the finished mix."""
+    """The stem files this producer publishes, beside the finished mix."""
     music = (root / "music").resolve()
     _need(music.is_relative_to(root), "LIPSYNC_FOREIGN_ARTIFACT", "producer output leaves run")
     music.mkdir(parents=True, exist_ok=True)
-    return music / STEM_NAME, music / INSTRUMENTAL_NAME
+    return (music / STEM_NAME, music / LEAD_NAME, music / BACKING_NAME,
+            music / INSTRUMENTAL_NAME)
+
+
+def _stem_name(path):
+    """A file's stem label, normalised: ``backing_vocals`` = ``backing-vocals``."""
+    return "".join(c for c in Path(path).stem.lower() if c.isalnum())
+
+
+def _by_stem(saved, want, exclude=()):
+    """Match a split output by the stem name in its file name, not its order."""
+    w = _stem_name(want)
+    out = []
+    for path in saved:
+        name = _stem_name(path)
+        if w and w in name and not any(x in name for x in exclude):
+            out.append(path)
+    return out
+
+
+def _backing_source(root, saved):
+    """The clean backing track the split returned, or None (test B: names, not order)."""
+    hits = _by_stem(saved, BACKING_NAME)
+    if not hits:
+        hits = _by_stem(saved, "backing vocals")
+    return _path(root, str(hits[0])) if hits else None
+
+
+def _lead_source(root, saved, fallback):
+    """The lead track by name; the isolated stem is the lead when unnamed."""
+    hits = _by_stem(saved, LEAD_NAME, exclude=("backing",))
+    if not hits:
+        hits = _by_stem(saved, "vocals", exclude=("backing",))
+    return _path(root, str(hits[0])) if hits else fallback
 
 
 def _instrumental(root, evidence, stem, saved):
@@ -100,8 +157,9 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
 
     The song is separated once for the whole run: a present
     ``music/vocal-stem.mp3`` (with its separation receipt) is reused and no job
-    is submitted; otherwise one job keyed ``logical_key="vocal-stem"`` runs and
-    publishes both stem files. Every clip cuts from ``music/vocal-stem.mp3``.
+    is submitted; otherwise one ``split_stem`` job keyed ``logical_key="vocal-stem"``
+    runs and publishes the lead, backing and instrumental tracks. Every clip
+    cuts from its own role's track (``row.get("role")``; "lead" when unnamed).
     """
     root, required = _approved(run_dir)
     row = required.get(shot_id)
@@ -110,7 +168,7 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
     song_hash = _sha(song)
     _need(song.stat().st_size > 0, "LIPSYNC_SELECTED_SONG_MISMATCH", "selected song is empty")
     selection = _selection(root, song)
-    vocal, instrumental = _music_paths(root)
+    vocal, lead, backing, instrumental = _music_paths(root)
     directory = (root / "control/lipsync-production" / uuid.uuid4().hex).resolve()
     _need(directory.is_relative_to(root), "LIPSYNC_FOREIGN_ARTIFACT", "producer output leaves run")
     directory.mkdir(parents=True)
@@ -135,6 +193,9 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
         separated = _path(root, held.get("separated_path"))
         separated_hash = held.get("separated_sha256")
         stem = (separation.get("evidence") or {}).get("isolated_stem") or {}
+        if not lead.is_file():
+            # A receipt from before the role tracks kept only the delivery copy.
+            _publish(vocal, lead)
     else:
         request = {"model": MODEL, "run_id": run_id, "source_path": str(song),
                    "source_sha256": song_hash, "output_dir": str(directory),
@@ -158,23 +219,39 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
         saved = [_path(root, p) for p in ev.get("saved_paths", [])]
         _need(source in saved and source.stat().st_size > 0 and source != song,
               "LIPSYNC_SEPARATION_FAILED", "separation task did not save an isolated stem")
+        lead_source = _lead_source(root, saved, source)
+        backing_source = _backing_source(root, saved)
         instrumental_source = _instrumental(root, ev, stem, saved)
         _need(instrumental_source.stat().st_size > 0 and instrumental_source != song
               and instrumental_source != source,
               "LIPSYNC_SEPARATION_FAILED", "separation task did not save an instrumental")
         separated, separated_hash = source, _sha(source)
         separation_request = request
-        _publish(source, vocal)
+        _publish(lead_source, lead)
+        _publish(lead_source, vocal)
+        if backing_source is not None:
+            _need(backing_source.stat().st_size > 0 and backing_source != song,
+                  "LIPSYNC_SEPARATION_FAILED", "backing track is empty")
+            _publish(backing_source, backing)
         _publish(instrumental_source, instrumental)
-        _record(receipt, {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer",
+        receipt_record = {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer",
                           "producer_version": VERSION, "source_path": str(song),
                           "source_sha256": song_hash, "selection": selection,
                           "separation": separation, "separation_request": request,
                           "separated_path": str(separated),
                           "separated_sha256": separated_hash,
                           "stem_path": str(vocal), "stem_sha256": _sha(vocal),
+                          "lead_path": str(lead), "lead_sha256": _sha(lead),
                           "instrumental_path": str(instrumental),
-                          "instrumental_sha256": _sha(instrumental)})
+                          "instrumental_sha256": _sha(instrumental),
+                          "tracks": {"vocals": {"path": str(lead),
+                                                "sha256": _sha(lead)}}}
+        if backing_source is not None:
+            receipt_record["backing_path"] = str(backing)
+            receipt_record["backing_sha256"] = _sha(backing)
+            receipt_record["tracks"]["backing-vocals"] = {
+                "path": str(backing), "sha256": _sha(backing)}
+        _record(receipt, receipt_record)
     # One stem per SONG: the separated vocal is shared by every clip, so the
     # speaker recorded on the separation job is the first line's, not this
     # line's. The per-line question is whether THIS line's cut is one isolated
@@ -184,7 +261,17 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
                  "delivery": stem.get("delivery")}
     ok, code, errors = check_stems([line_stem], row["speaker"])
     _need(ok, code, str(errors))
-    stem_hash = _sha(vocal)
+    # A piece cuts from its own role's track (3N.9): a lead piece from the
+    # lead track, a backing/choir/overlap piece from the clean backing track.
+    role = str(row.get("role") or row.get("track") or "lead").strip().lower()
+    if role in BACKING_ROLES:
+        _need(backing.is_file() and backing.stat().st_size > 0,
+              "LIPSYNC_WRONG_STEM",
+              "a %r piece needs the backing track; the split returned none" % role)
+        cut_track = backing
+    else:
+        cut_track = lead
+    stem_hash = _sha(cut_track)
     record = {"schema": SCHEMA, "producer": "audio_c3.lipsync_producer",
               "producer_version": VERSION, "state": "offset_started",
               "run_id": run_id, "binding": _binding(row), "source_path": str(song),
@@ -192,15 +279,19 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
               "separation": separation, "separation_request": separation_request,
               "separated_path": str(separated),
               "separated_sha256": separated_hash,
-              "stem_path": str(vocal), "stem_sha256": stem_hash,
+              "stem_path": str(cut_track), "stem_sha256": stem_hash,
+              "track": role,
+              "lead_path": str(lead), "lead_sha256": _sha(lead),
+              "backing_path": str(backing) if backing.is_file() else None,
+              "backing_sha256": _sha(backing) if backing.is_file() else None,
               "instrumental_path": str(instrumental),
               "instrumental_sha256": _sha(instrumental),
               "speaker_id": stem["speaker_id"], "isolated": stem["isolated"],
               "kind": stem.get("kind")}
     _record(path, record)
-    # Every clip cuts from the one saved vocal stem, never from a task output.
-    offset = (measure_offset or measure_offset_files)(str(vocal), str(song))
-    _need(_sha(vocal) == stem_hash and _sha(song) == song_hash,
+    # Every clip cuts from its saved role track, never from a task output.
+    offset = (measure_offset or measure_offset_files)(str(cut_track), str(song))
+    _need(_sha(cut_track) == stem_hash and _sha(song) == song_hash,
           "LIPSYNC_SOURCE_CHANGED", "source changed during offset measurement")
     _need(isinstance(offset, dict) and _num(offset.get("offset_s")) and _num(offset.get("corr")),
           "LIPSYNC_OFFSET_MISSING", "measured offset and correlation required")
@@ -208,14 +299,14 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
     _need(cut["cut_start_stem"] >= 0, "LIPSYNC_CUT_INVALID", "offset places cut before source")
     output = directory / "cut.wav"
     argv = ["ffmpeg", "-v", "error", "-y", "-threads", "4", "-ss", str(cut["cut_start_stem"]),
-            "-i", str(vocal), "-t", str(cut["cut_dur"]), "-vn", "-c:a", "pcm_s16le", str(output)]
+            "-i", str(cut_track), "-t", str(cut["cut_dur"]), "-vn", "-c:a", "pcm_s16le", str(output)]
     record.update(state="cut_started", offset=offset, cut=cut, cut_argv=argv)
     _record(path, record)
     if cut_runner is None:
         from load_governor import run_ffmpeg
         cut_runner = run_ffmpeg
     cut_runner(argv, "lipsync-line-cut", check=True, timeout=300)
-    _need(_sha(vocal) == stem_hash and _sha(song) == song_hash and _selection(root, song) == selection,
+    _need(_sha(cut_track) == stem_hash and _sha(song) == song_hash and _selection(root, song) == selection,
           "LIPSYNC_SOURCE_CHANGED", "source changed while cutting")
     output = _path(root, str(output))
     _need(output.stat().st_size > 0, "LIPSYNC_CUT_INVALID", "cut output empty")
@@ -224,7 +315,7 @@ def produce(run_dir, run_id, shot_id, song_path, separation_runner,
     return {"path": str(output), "speaker_id": stem["speaker_id"], "kind": stem.get("kind"),
             "isolated": stem["isolated"], "line_ids": row["lip_sync_line_ids"],
             "start_s": row["start_s"], "end_s": row["end_s"], "lineage_path": str(path),
-            "stem_path": str(vocal)}
+            "stem_path": str(cut_track), "track": role}
 
 
 def verify(run_dir, run_id, row, stem, song_path=None):
@@ -242,14 +333,21 @@ def verify(run_dir, run_id, row, stem, song_path=None):
         _need(source == _path(root, song_path), "LIPSYNC_SELECTED_SONG_MISMATCH", "export uses a different soundtrack")
     separated = _path(root, rec.get("separated_path"))
     output = _path(root, rec.get("output_path"))
-    # One saved stem per song, cut by every clip; delivery reads the same file.
+    # One saved stem per role per song, cut by every clip of that role;
+    # delivery reads the lead's own copy at music/vocal-stem.mp3.
     saved_stem = _path(root, rec.get("stem_path"))
     instrumental = _path(root, rec.get("instrumental_path"))
-    _need(saved_stem == (root / "music" / STEM_NAME).resolve()
+    role = rec.get("track") or "lead"
+    want = ((root / "music" / BACKING_NAME).resolve() if role in BACKING_ROLES
+            else (root / "music" / LEAD_NAME).resolve())
+    _need(saved_stem == want
           and instrumental == (root / "music" / INSTRUMENTAL_NAME).resolve()
           and _sha(saved_stem) == rec.get("stem_sha256")
           and _sha(instrumental) == rec.get("instrumental_sha256"),
-          "LIPSYNC_LINEAGE_MISMATCH", "saved stem/instrumental moved or changed")
+          "LIPSYNC_LINEAGE_MISMATCH", "saved role stem/instrumental moved or changed")
+    delivery = (root / "music" / STEM_NAME).resolve()
+    _need(delivery.is_file() and _sha(delivery) == _sha((root / "music" / LEAD_NAME).resolve()),
+          "LIPSYNC_LINEAGE_MISMATCH", "delivery copy of the lead track moved or changed")
     _need(_sha(separated) == rec.get("separated_sha256") and output == _path(root, stem.get("path"))
           and _sha(output) == rec.get("output_sha256"), "LIPSYNC_LINEAGE_MISMATCH", "separated/cut bytes changed")
     offset = rec.get("offset") or {}
@@ -409,7 +507,7 @@ def skill74_runner(run_dir, source_uploader, dispatch_kwargs, isolated_stem_read
         upload = output_dir / "source-upload.json"
         with upload.open("x", encoding="utf-8") as f:
             json.dump({"path": str(source), "sha256": digest, "url": url}, f)
-        inp = {"audio_url": url, "type": "separate_vocal", "stem_name": "Lead Vocal"}
+        inp = {"audio_url": url, "type": SPLIT_TYPE}
         dispatch = dispatch_fn
         if dispatch is None:
             from kie_dispatch.kie_dispatch import dispatch

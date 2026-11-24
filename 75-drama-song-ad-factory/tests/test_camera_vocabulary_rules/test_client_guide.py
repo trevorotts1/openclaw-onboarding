@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(SKILL / "scripts"))
+sys.path.insert(0, str(SKILL / "scripts" / "core"))
 
 from camera_signatures.rules import (  # noqa: E402
     CLIENT_GUIDE_DRONE_LINE,

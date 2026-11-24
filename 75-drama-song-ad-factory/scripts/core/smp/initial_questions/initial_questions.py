@@ -101,6 +101,7 @@ LOOKS = (
     ("sketch-to-life", "Sketch to Life"),
     ("canvas-to-life", "Canvas to Life"),
     ("canvas-to-3d", "Canvas to 3D"),
+    ("stylized-3d", "Stylized 3D"),
 )
 #: S75-CATALOG: the full eighteen-style menu of record (same labels the
 #: card and style_help render); the first three stay the pre-2026 menu.

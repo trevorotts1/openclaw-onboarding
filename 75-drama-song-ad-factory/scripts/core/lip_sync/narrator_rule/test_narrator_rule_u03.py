@@ -75,8 +75,12 @@ class ChooseWindowSelectionTests(unittest.TestCase):
         self.assertEqual("ok", plan["outcome"], plan)
         self.assertEqual(["L1"], plan["lipsync_line_ids"])
         window = plan["selection"]["selected"][0]["window"]
-        self.assertGreaterEqual(window["dur"], 4.0)
-        self.assertLessEqual(window["dur"], 6.0)
+        # N-101 (3.3a): a piece is whole sentences, 5 to 30 seconds. The
+        # numbers are lipsync_clips.CLIP_MIN_S / CLIP_MAX_S (U-PLAN's file),
+        # so this assertion follows whatever the Clip Sizer's constants say.
+        import lipsync_clips
+        self.assertGreaterEqual(window["dur"], lipsync_clips.CLIP_MIN_S)
+        self.assertLessEqual(window["dur"], lipsync_clips.CLIP_MAX_S)
         self.assertEqual("L1", plan["lipsync_selection"]["selected"][0]["line_id"])
 
     def test_an_unflagged_line_is_never_selected(self):

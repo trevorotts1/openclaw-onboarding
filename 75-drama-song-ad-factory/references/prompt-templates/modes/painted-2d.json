@@ -7,6 +7,11 @@
   "kling_block": "Hand-painted 2D cartoon: confident contour lines, soft cel shading, visible brush texture, painterly backgrounds, warm golden key with teal fill, fine canvas grain, no 3D shading, no photoreal skin.",
   "kling_who": "hand-painted 2D animated",
   "keyframe_clause": "same character drawn in the hand-painted 2D style, clean contour lines and soft cel shading",
+  "banned_words": ["photoreal", "photorealistic", "photographic", "photograph",
+                   "photo", "live-action", "real human being", "real person",
+                   "DSLR", "35mm", "visible pores", "shot on", "3D render",
+                   "3D shading"],
   "lipsync_allowed": true,
-  "lipsync_note": "Allowed by the card for the 2D Hand-Painted look, but the mediapipe picture gate and sync check may read a painted face as UNMEASURABLE; that routes to the person's mouth strip, never a silent pass. Hybrid looks never lip-sync painted shots."
+  "lipsync_note": "Allowed by the card for the 2D Hand-Painted look, but the mediapipe picture gate and sync check may read a painted face as UNMEASURABLE; that routes to the person's mouth strip, never a silent pass. Hybrid looks never lip-sync painted shots.",
+  "client_wording": "2D Hand-Painted: a painted cartoon look with confident line work, soft cel shading and visible brush texture."
 }

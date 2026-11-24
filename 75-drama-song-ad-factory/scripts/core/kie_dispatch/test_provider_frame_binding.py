@@ -84,7 +84,7 @@ class ProviderFrameBindingTest(unittest.TestCase):
             self.assertEqual(args[0], 'upload')
             path = args[args.index('--file') + 1]
             seen.append(Path(path).read_bytes())
-            return 0, {'data': {'download_url': 'https://fixture.invalid/uploaded-picture-' + sid + '.png'}}, ''
+            return 0, {'data': {'download_url': 'https://kieai.redpandaai.co/uploaded-picture-' + sid + '.png'}}, ''
         # Exercise the actual default uploader path, trapping only the lower
         # transport. This is a zero-network protocol test, not a live upload.
         with patch.object(subprocess, 'run', side_effect=AssertionError('external subprocess forbidden')) as processes, \

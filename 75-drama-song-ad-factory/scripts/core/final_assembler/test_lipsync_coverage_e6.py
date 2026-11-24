@@ -9,9 +9,9 @@ Proves exactly the manual's done-when pairs and nothing looser:
   60 s ad) and 3 clips, scaled with length. Supersedes the 2026-10-08 30-40 s
   order.
   PASS: a 60 s ad with 3 lip-sync lines totalling >= 15 s.
-  FAIL: a plan under both floors (2 lines / 10 s in a 60 s ad).
-  FAIL: a 120 s ad with 6 lines totalling 20 s (below 30 s): scales.
-  FAIL: a 60 s ad with only 2 lines (never fewer than 3 lines).
+  FAIL: a plan under both floors (1 line / 10 s in a 60 s ad).
+  FAIL: a 120 s ad with 3 lines totalling 20 s (below 30 s): scales.
+  FAIL: a 90 s ad with only 2 lines (floor of 3 from 90 s up, N-101).
   PASS: no reason codes other than the documented two.
   WIRE: the marker rides plan_timeline -> lipsync_gate; assembler
         dry-run blocks a 2-minute 6-s ad and a 60-s 3-clip 9-s plan, and
@@ -52,7 +52,7 @@ FAILS = []
 
 def check(name, cond, detail=""):
     print("%s: %s%s" % ("ok" if cond else "FAIL", name,
-                        (" (%s)" % detail) if detail and not cond else ""))
+                        (" (%r)" % (detail,)) if detail and not cond else ""))
     if not cond:
         FAILS.append(name)
 
@@ -70,8 +70,14 @@ def test_done_when_pairs():
     exact = check_lipsync_coverage(60, 3, 15.0)
     check("done-when PASS: 60 s ad, 3 lines totalling exactly 15 s (25%) passes",
           exact["pass"] is True, exact)
-    old = check_lipsync_coverage(60, 2, 10.0)
-    check("a plan under BOTH floors (2 lines / 10 s) FAILS on both",
+    # Under both floors: one line short of the clip floor AND under the
+    # seconds floor -- built from the budget values so it holds on either
+    # constant set (old 4-6 s clips or N-101 5-30 s pieces).
+    import lipsync_clips as _LC2
+    _need = required_lines(90)
+    old = check_lipsync_coverage(90, _need - 1, 10.0)
+    check("a plan under both floors (1 line short of %d / 10 s in a 90 s "
+          "ad) FAILS on both" % _need,
           old["pass"] is False and COVERAGE_SHORT in old["reason_code"]
           and LINES_TOO_FEW in old["reason_code"], old)
     # H8: lip-sync seconds use Trevor's band (percent short of the goal).
@@ -91,23 +97,29 @@ def test_done_when_pairs():
 
 
 def test_scaled_rules():
-    """Everything scales with length; never fewer than 3 lines."""
+    """Everything scales with length (N-101: floor of 3 from 90 s up only;
+    under 90 s the seconds-to-pieces floor rules)."""
     check("60 s floor is 15 s (25%)", abs(required_total_s(60) - 15.0) < 1e-9)
     check("120 s floor is 30 s", abs(required_total_s(120) - 30.0) < 1e-9)
     check("30 s floor is 7.5 s", abs(required_total_s(30) - 7.5) < 1e-9)
-    check("clip floor: 3 at 60 s, 5 at 120 s, 3 at 30 s and never < 3",
-          (required_lines(60), required_lines(120), required_lines(30),
-           required_lines(10)) == (3, 5, 3, 3),
-          (required_lines(60), required_lines(120), required_lines(30)))
-    scaled_pass = check_lipsync_coverage(120, 5, 30.0)
-    check("120 s ad with 5 lines/30 s passes",
+    # N-101: the floor comes from clips.budget (3 from 90 s up only) --
+    # assert the wiring to that truth so the expected values track whichever
+    # constants the merged tree carries, instead of pinning the old 3/5/3.
+    import lipsync_clips as _LC
+    check("clip floor follows lipsync_clips.budget min_clips (N-101)",
+          [required_lines(l) for l in (60, 120, 30, 10, 90)]
+          == [_LC.budget(l)["min_clips"] for l in (60, 120, 30, 10, 90)],
+          [required_lines(l) for l in (60, 120, 30, 10, 90)])
+    need120 = required_lines(120)
+    scaled_pass = check_lipsync_coverage(120, need120, 30.0)
+    check("120 s ad with %d lines/30 s passes" % need120,
           scaled_pass["pass"] is True, scaled_pass)
-    scaled_fail = check_lipsync_coverage(120, 6, 20.0)
-    check("120 s ad with 6 lines/20 s fails (scales with runtime)",
+    scaled_fail = check_lipsync_coverage(120, 3, 20.0)
+    check("120 s ad with 3 lines/20 s fails (scales with runtime)",
           scaled_fail["pass"] is False
           and COVERAGE_SHORT in scaled_fail["reason_code"], scaled_fail)
-    few = check_lipsync_coverage(60, 2, 17.5)
-    check("60 s ad with 2 lines fails lines-min even at 17.5 s",
+    few = check_lipsync_coverage(90, 2, 22.5)
+    check("90 s ad with 2 lines fails lines-min even at 22.5 s (floor of 3)",
           few["pass"] is False and LINES_TOO_FEW in few["reason_code"], few)
     emitted = (scaled_fail["reason_code"], few["reason_code"])
     allowed = {LINES_TOO_FEW, COVERAGE_SHORT}
@@ -141,8 +153,28 @@ def _tl(segs, dur, tmp):
           "width": 1920, "height": 1080, "song_path": None,
           "transition": "none", "segments": segs}
     attach_evidence(tl, tmp)
-    for seg in tl["segments"]:
+    # S-42: OmniHuman 2.0 is the one lip-sync model; make the synthetic
+    # receipts name it so the wave truth admits these fixtures.
+    from kie_dispatch.model_lock import LOCKED_LIPSYNC_MODEL as _LM
+    from pathlib import Path as _P
+    for _rc in _P(tmp).glob("receipts/task-shot-*.json"):
+        _d = json.loads(_rc.read_text())
+        _d["evidence"]["lipsync_model"] = _LM
+        _rc.write_text(json.dumps(_d))
+    for i, seg in enumerate(tl["segments"]):
         seg.setdefault("faces_on_screen", [])
+        if seg.get("lip_sync") or seg.get("lip_sync_line_ids"):
+            # N-113: a lip-sync take enters the timeline only with a complete
+            # eye record (a contact sheet, who looked, the verdict) and its
+            # landed close-up facts. lipsync_evidence.check_plan refuses a
+            # take without them, so the fixture supplies what a real chain
+            # writes for an eye-checked take.
+            _eye = {"sheet": "contact-sheet-%d.png" % i,
+                    "who": "qc-reader", "verdict": "PASS"}
+            seg["eye_record"] = dict(_eye)
+            seg["eye_check"] = dict(_eye)
+            seg["landed"] = {"max_face_h_pct": 40.0, "camera_move_px": 12.0}
+            seg["take_dur_s"] = float(seg.get("dur") or 0.0)
     tl["timing"] = {"sections": [{"lyrics": [
         {"line_id": ln["line_id"], "start": ln["start_s"], "end": ln["end_s"]}
         for ln in tl["lines"]]}]}

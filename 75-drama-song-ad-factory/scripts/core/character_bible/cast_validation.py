@@ -72,6 +72,13 @@ __all__ = [
     "derive_speakers",
     "validate_cast",
     "assert_valid_cast",
+    "validate_cast_lock",
+    "CAST_NOT_IN_BIBLE",
+    "CAST_REFERENCE_MISSING",
+    "CAST_LOOKALIKE",
+    "IDENTITY_BLOCK_WRONG_CHARACTER",
+    "UNLISTED_PERSON",
+    "CAST_MEMBER_MISSING",
 ]
 
 CROWD_REQUIRED = (
@@ -1027,3 +1034,175 @@ def assert_valid_cast(manifest, scenes=None):
     if not packet["ok"]:
         raise CastValidationError(packet)
     return packet
+
+
+# --------------------------------------------------------------------------- #
+# N-119: the Cast Lock -- every person on screen is in the character bible.
+#
+# Plan-time and lock-file checks. Nothing here spends or draws: it reads the
+# cast list, the lock file and the shot cast records and refuses by name.
+# --------------------------------------------------------------------------- #
+CAST_NOT_IN_BIBLE = "CAST_NOT_IN_BIBLE"
+CAST_REFERENCE_MISSING = "CAST_REFERENCE_MISSING"
+CAST_LOOKALIKE = "CAST_LOOKALIKE"
+IDENTITY_BLOCK_WRONG_CHARACTER = "IDENTITY_BLOCK_WRONG_CHARACTER"
+UNLISTED_PERSON = "UNLISTED_PERSON"
+CAST_MEMBER_MISSING = "CAST_MEMBER_MISSING"
+
+_LOOK_FIELDS = ("age", "hair", "build", "silhouette")
+
+
+def _cast_entries(manifest):
+    cast = manifest.get("cast") if isinstance(manifest, dict) else None
+    return [e for e in cast if isinstance(e, dict)] if isinstance(cast, list) else []
+
+
+def _locked_sets(lock_file):
+    """{character_id: reference list} from the run lock file.
+
+    Accepts ``{"characters": {id: {...}}}`` and ``{"characters": [{...}]}``.
+    A reference list is ``references`` / ``reference_assets`` / ``refs`` or the
+    value itself when it is already a list.
+    """
+    if not isinstance(lock_file, dict):
+        return {}
+    chars = lock_file.get("characters", lock_file.get("cast"))
+    out = {}
+    if isinstance(chars, dict):
+        items = list(chars.items())
+    elif isinstance(chars, list):
+        items = [(c.get("character_id"), c) for c in chars if isinstance(c, dict)]
+    else:
+        return {}
+    for cid, entry in items:
+        if not isinstance(cid, str) or not cid.strip():
+            continue
+        if isinstance(entry, list):
+            refs = entry
+        elif isinstance(entry, dict):
+            refs = (entry.get("references") or entry.get("reference_assets")
+                    or entry.get("refs") or [])
+        else:
+            refs = []
+        out[cid] = refs if isinstance(refs, list) else []
+    return out
+
+
+def validate_cast_lock(manifest, lock_file=None, lineup=None,
+                       identity_blocks=None, shots=None):
+    """N-119: every person on screen is locked in the character bible.
+
+    ``manifest``: the cast manifest (``{"cast": [...]}``).
+    ``lock_file``: the run lock file; every cast entry needs a non-empty locked
+    reference set there, else ``CAST_REFERENCE_MISSING``.
+    ``lineup``: [{character_id, age, hair, build, silhouette}]; two entries
+    alike on every look field are a ``CAST_LOOKALIKE`` pair.
+    ``identity_blocks``: {character_id: text}; one character's block appearing
+    under another id is ``IDENTITY_BLOCK_WRONG_CHARACTER``.
+    ``shots``: [{shot_id, cast_ids, seen_people}]; a seen face outside the
+    manifest and the shot's cast is ``UNLISTED_PERSON``; a cast member absent
+    from ``seen_people`` is ``CAST_MEMBER_MISSING``.
+
+    Returns the standard packet. It never spends, draws or writes.
+    """
+    defects = []
+    entries = _cast_entries(manifest)
+    cast_ids = {e.get("character_id") for e in entries
+                if isinstance(e.get("character_id"), str) and e["character_id"].strip()}
+    if not entries:
+        defects.append(_defect("cast", "empty", None,
+                               "cast: the Cast Lock needs a cast list from the Story Beats"))
+
+    locked = _locked_sets(lock_file)
+    if lock_file is not None:
+        for e in entries:
+            cid = e.get("character_id")
+            if not (isinstance(cid, str) and cid.strip()):
+                continue
+            if not locked.get(cid):
+                defects.append(_defect("cast." + cid, CAST_REFERENCE_MISSING,
+                                       {"character_id": cid},
+                                       "cast entry %s: no locked reference set in the lock file; "
+                                       "lock the character before any picture" % cid))
+
+    for pair in _lookalike_pairs(lineup):
+        defects.append(_defect("lineup", CAST_LOOKALIKE, {"pair": pair},
+                               "lineup: %s and %s are alike on every look field; "
+                               "change one until no two cast members can be confused"
+                               % (pair[0], pair[1])))
+
+    defects.extend(_identity_block_defects(identity_blocks))
+
+    for shot in shots or []:
+        if not isinstance(shot, dict):
+            continue
+        sid = shot.get("shot_id")
+        shot_cast = {c for c in (shot.get("cast_ids") or [])
+                     if isinstance(c, str) and c.strip()}
+        for cid in shot_cast:
+            if cid not in cast_ids:
+                defects.append(_defect("shot." + str(sid), CAST_NOT_IN_BIBLE,
+                                       {"shot_id": sid, "character_id": cid},
+                                       "shot %s: '%s' is in the shot cast but absent from the "
+                                       "character bible" % (sid, cid)))
+        seen = shot.get("seen_people")
+        if isinstance(seen, list):
+            for cid in seen:
+                if cid not in cast_ids or (shot_cast and cid not in shot_cast):
+                    defects.append(_defect("shot." + str(sid), UNLISTED_PERSON,
+                                           {"shot_id": sid, "character_id": cid},
+                                           "shot %s: '%s' has a visible face but is not this "
+                                           "shot's cast or the bible" % (sid, cid)))
+            for cid in shot_cast:
+                if cid not in seen:
+                    defects.append(_defect("shot." + str(sid), CAST_MEMBER_MISSING,
+                                           {"shot_id": sid, "character_id": cid},
+                                           "shot %s: the beat says %s is here but no face matched"
+                                           % (sid, cid)))
+
+    seen_keys = set()
+    unique = []
+    for defect in defects:
+        key = (defect["field"], defect["issue"],
+               repr(sorted((str(k), repr(v)) for k, v in (defect.get("ref") or {}).items())))
+        if key not in seen_keys:
+            seen_keys.add(key)
+            unique.append(defect)
+    return {"ok": not unique, "defect_count": len(unique), "defects": unique}
+
+
+def _lookalike_pairs(lineup):
+    """Character id pairs alike on every LOOK field (never a name match)."""
+    rows = [r for r in (lineup or []) if isinstance(r, dict)
+            and isinstance(r.get("character_id"), str)]
+    pairs = []
+    for i, a in enumerate(rows):
+        for b in rows[i + 1:]:
+            if all(_look_text(a.get(f)) == _look_text(b.get(f)) and _look_text(a.get(f))
+                   for f in _LOOK_FIELDS):
+                pairs.append((a["character_id"], b["character_id"]))
+    return pairs
+
+
+def _look_text(value):
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def _identity_block_defects(identity_blocks):
+    """One identity block per character; a block reused under another id fails."""
+    if not isinstance(identity_blocks, dict):
+        return []
+    defects = []
+    owner = {}
+    for cid, block in identity_blocks.items():
+        if not isinstance(cid, str) or not isinstance(block, str) or not block.strip():
+            continue
+        text = block.strip()
+        if text in owner and owner[text] != cid:
+            defects.append(_defect(
+                "identity_blocks", IDENTITY_BLOCK_WRONG_CHARACTER, {"character_id": cid},
+                "identity_blocks: '%s' carries the same identity text as '%s'; one "
+                "character's lock is never pasted onto another" % (cid, owner[text])))
+        else:
+            owner[text] = cid
+    return defects

@@ -30,9 +30,24 @@ from .shot_planner import (
     plan_generation_count,    validate_story_order,
     e4_final_checks,
     to_e4_qc_record,
+    CHAIN_NOT_CONTINUOUS,
+    check_chain_continuity,
+    chain_final_checks,
+    CARD_HOLD_MIN_S,
+    CARD_HOLD_MAX_S,
+    plan_endcard_start,
     prompt_spec_for,
     PROMPT_SPEC_KEYS,
     class_check,
+)
+from .route_source import (  # F-ROUTE-SRC: the plan-builder route source
+    ROUTE_SOURCE_MISMATCH,
+    ROUTE_SOURCE_OK,
+    ROUTE_LIPSYNC,
+    ROUTE_STORY_DEFAULT,
+    derive_route,
+    check_route_source,
+    build_plan_routes,
 )
 from .timestamp_plan import (  # Part H H5
     MAX_SLOWMO,
@@ -110,12 +125,18 @@ __all__ = [
     "TARGET_SHOT_SECONDS", "E4_REASONS", "E4_GATE_STEPS",
     "validate_no_reuse", "plan_generation_count", "validate_story_order",
     "e4_final_checks", "to_e4_qc_record", "prompt_spec_for", "PROMPT_SPEC_KEYS",
+    "CHAIN_NOT_CONTINUOUS", "check_chain_continuity", "chain_final_checks",
+    "CARD_HOLD_MIN_S", "CARD_HOLD_MAX_S", "plan_endcard_start",
+    "ROUTE_SOURCE_MISMATCH", "ROUTE_SOURCE_OK", "ROUTE_LIPSYNC",
+    "ROUTE_STORY_DEFAULT", "derive_route", "check_route_source",
+    "build_plan_routes",
     "class_check",
     "OPENING_KEYS", "OPPOSITE_READINGS",
     "opening_from_script", "build_opening_scene", "apply_opening",
     "validate_opening", "plan_opening", "infer_opposite_reading",
     "MOTION_SCORE_LOW", "MOTION_SUBJECT_LOW", "MOTION_STRUCTURE_MIN",
     "CLIP_LOW_MOTION", "CLIP_MOTION_UNMEASURABLE", "MotionScoreError",
+    "MOTION_FLAG_ADVISORY", "CLIP_FROZEN_CONFIRMED", "motion_advice",
     "gate_clip_motion",
 ]
 
@@ -131,6 +152,9 @@ from .motion_score import (  # noqa: E402,F401
     MOTION_STRUCTURE_MIN,
     CLIP_LOW_MOTION,
     CLIP_MOTION_UNMEASURABLE,
+    MOTION_FLAG_ADVISORY,
+    CLIP_FROZEN_CONFIRMED,
     MotionScoreError,
     gate_clips as gate_clip_motion,
+    motion_advice,
 )

@@ -1,0 +1,44 @@
+{
+  "schema": "blackceo.speed-limits/v1",
+  "note": "Plan 10B/10C/10D, S-13. One pace everywhere: 20 requests per 15 seconds.",
+  "pacing": {
+    "requests_per_window": 20,
+    "window_seconds": 15.0
+  },
+  "poll_tiers_seconds": [2.0, 5.0, 10.0],
+  "poll_early_window_seconds": 30.0,
+  "poll_tier_mid_seconds": 180.0,
+  "outlier": {
+    "limits_seconds": {
+      "picture": 120,
+      "h3_image_to_video": 600,
+      "nine_picture": 1320,
+      "lipsync": 420,
+      "lipsync_long": 600
+    },
+    "resends": 1
+  },
+  "resubmit": {
+    "max_tries": 2,
+    "overloaded_max_sends": 5,
+    "overloaded_interval_seconds": 30
+  },
+  "spend_guard": {
+    "ceiling_multiple": 1.5,
+    "warn_fraction": 0.8,
+    "stop_fraction": 1.0,
+    "remake_rounds": 1
+  },
+  "chain_child": {
+    "max_seconds_after_parent": 60
+  },
+  "upload_freshness_hours": 23,
+  "clip_length": {
+    "shot_plus_seconds": 1,
+    "camera_move_extra_seconds": 2
+  },
+  "slow_route_head_start": {
+    "routes": ["nine-picture", "long-take"],
+    "requires_owner_choice": "go ahead if every check passes"
+  }
+}

@@ -15,7 +15,8 @@ from choice_card.intake_card import intake_card as IC  # noqa: E402
 
 MUSIC = next(q for q in IC.QUESTIONS if q["id"] == "music")
 LOOK = next(q for q in IC.QUESTIONS if q["id"] == "look")
-IDS = ["lifelike-3d", "2d-hand-painted", "sketch-to-life", "canvas-to-life", "canvas-to-3d"]
+IDS = ["lifelike-3d", "2d-hand-painted", "sketch-to-life", "canvas-to-life",
+       "canvas-to-3d", "stylized-3d"]
 MAX_WORDS = 12     # words in an option's explanation line
 MAX_ASK = 70       # characters in a question's ask line
 
@@ -50,7 +51,7 @@ def test_option_order_labels_and_recommended_unchanged():
     assert len(MUSIC["full_options"]) == 18
     assert [o for o, _ in LOOK["options"]] == [
         "Lifelike 3D", "2D Hand-Painted", "Sketch to Life (Hybrid)",
-        "Canvas to Life", "Canvas to 3D"]
+        "Canvas to Life", "Canvas to 3D", "Stylized 3D"]
     assert MUSIC["recommended"] == 0 and LOOK["recommended"] == 0
     from choice_card.looks import looks as L
     assert list(L.LOOK_ORDER) == IDS            # ids and order untouched

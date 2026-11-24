@@ -7,6 +7,11 @@
   "kling_block": null,
   "kling_who": null,
   "keyframe_clause": "same character drawn as a black-and-white ink sketch, wobbly line, grey hatching",
+  "banned_words": ["photoreal", "photorealistic", "photographic", "photograph",
+                   "photo", "live-action", "real human being", "real person",
+                   "DSLR", "35mm", "visible pores", "shot on", "3D render",
+                   "3D shading", "colour", "color", "painted"],
   "lipsync_allowed": false,
-  "lipsync_note": "Never lip-synced (choice-card-spec 3.3): speech bubbles or reactions instead."
+  "lipsync_note": "Never lip-synced (choice-card-spec 3.3): speech bubbles or reactions instead.",
+  "client_wording": "Sketch: black-and-white hand-drawn ink with a wobbly line and grey hatching."
 }

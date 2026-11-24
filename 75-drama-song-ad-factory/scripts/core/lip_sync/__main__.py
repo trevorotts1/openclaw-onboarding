@@ -43,6 +43,13 @@ def _isolation_reader(path):
 
 
 def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "adopt":
+        # N-16: one command registers takes already on disk. Its flags are
+        # adopt.py's own, so it is dispatched before this parser sees them.
+        from lip_sync import adopt
+        return adopt.main(args[1:])
+    argv = args
     ap = argparse.ArgumentParser(
         prog="python3 -m lip_sync",
         description="Wire the lip-sync chain as one command: gate the picture, "
@@ -62,7 +69,7 @@ def main(argv=None):
     x.add_argument("--adapter", default=None,
                    help="Skill 74 kie_live_adapter.py (default: the standard search)")
     x.add_argument("--usd-per-s", type=float, default=None,
-                   help="Skill 74's price for kling/ai-avatar-standard, per second")
+                   help="Skill 74's price for omnihuman-2-0, per second")
     x.add_argument("--isolation-metadata", default=None,
                    help="JSON the audio preparation/QC wrote: the separated "
                         "stem's path, speaker_id, kind and isolated flag")

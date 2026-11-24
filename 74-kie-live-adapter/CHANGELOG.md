@@ -1,4 +1,9 @@
 # Changelog - Skill 74 KIE Live Adapter
+## [1.1.20] - 2026-11-23 - Skill 74 registry: omnihuman-2-0 entry (N-114, section 8.6)
+
+- references/kie-model-registry.json gains the omnihuman-2-0 row: image_urls (exactly one picture, under 30 MB, 300 to 6000 pixels a side, width over height 0.4 to 2.5), audio_url (wav or mp3, under 15 MB, 4 to 300 seconds), prompt up to 300 characters (never sent), enable_watermark false; 14 credits per rounded-up second, measured (KIE's page states no price). Counts recomputed with the builder helper.
+- Version roll to v1.1.20 (SKILL.md, skill-version.txt).
+
 ## [1.1.19] - 2026-11-11 - Harmony-95 Batch R: X-97 follow-up tests and the cmd_default_price signature in SKILL.md
 
 - Tests pin the echoed units, the image-to-image default route, the qc file list, the smallest-first credit range, an integer price cell and the missing-evidence fallback of the 2.6 Sunburst default. `SKILL.md` documents `cmd_default_price` as `(family, quality, edit, units)`. No script behaviour changed. Version bump so the Batch R pull request carries a version above main (G3).

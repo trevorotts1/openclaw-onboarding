@@ -96,5 +96,36 @@ def test_make_h3_request():
         raise SystemExit(1)
     print("ALL PASS")
 
+def test_frames_references_and_resolution():
+    """F-PM-4 / F-QM-2 / F-QM-3: end picture, nine references, 2K cap."""
+    MHR = load("mhr", CLI)
+    FIXD = FIX
+    spec = json.load(open(os.path.join(FIXD, "talking-closeup-S07.json")))
+    chars = json.load(open(os.path.join(FIXD, "sample-characters.json")))
+    u = "https://example.com/frame.webp"
+    ok, ref = MHR.build(spec, chars, u)
+    check("10: baseline image-to-video request builds", ok is not None and ref is None, ref)
+    ok, ref = MHR.build(spec, chars, u, last_frame_url="https://example.com/last.webp")
+    check("11: the end picture is accepted and emitted",
+          ok is not None and (ok.get("input") or {}).get("last_frame_url")
+          == "https://example.com/last.webp", ref or (ok or {}).get("input"))
+    r2v = dict(spec, model="minimax-h3/reference-to-video")
+    refs = ["https://example.com/a.webp", "https://example.com/b.webp"]
+    ok, ref = MHR.build(r2v, chars, None, reference_image_urls=refs)
+    check("12: reference-to-video carries its nine-picture references",
+          ok is not None and (ok.get("input") or {}).get("reference_image_urls") == refs,
+          ref)
+    ok, ref = MHR.build(spec, chars, u, reference_image_urls=refs[:1])
+    check("13: references mixed with a frame refuse REFERENCE_MIXED_WITH_FRAMES",
+          ok is None and (ref or {}).get("reason_code") == "REFERENCE_MIXED_WITH_FRAMES", ref)
+    ok, ref = MHR.build(spec, chars, u, resolution="4K")
+    check("14: a plain H3 request above 2K refuses H3_ABOVE_2K",
+          ok is None and (ref or {}).get("reason_code") == "H3_ABOVE_2K", ref)
+    ok, ref = MHR.build(spec, chars, u, resolution="2K")
+    check("15: 2K is allowed", ok is not None
+          and (ok.get("input") or {}).get("resolution") == "2K", ref)
+
+
 if __name__ == "__main__":
     test_make_h3_request()
+    test_frames_references_and_resolution()

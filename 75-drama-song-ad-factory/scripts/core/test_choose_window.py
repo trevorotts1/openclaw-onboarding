@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""choose_window: phrase-boundary cut with 0.30 s / 0.20 s padding, 4-6 s total,
-onset density, no held word, lip-friendly words, a different line per clip. $0.
+"""choose_window: the piece is the WHOLE line, 5-30 s, never cut (N-101);
+a held note is a receipt flag; a passage over 30 s stitches at a breath
+(N-112). $0.
 Run: python3 scripts/core/test_choose_window.py"""
 import os
 import sys
@@ -18,82 +19,79 @@ def words(spec, t0=0.0):
     return out
 
 
-# 10 quick words (~0.45 s each), a rest, then 4 slow held words
-FAST = [("we", .4, .02), ("walk", .4, .02), ("the", .4, .02), ("long", .4, .02),
-        ("road", .4, .02), ("home", .4, .02), ("to", .4, .02), ("you", .4, .02),
-        ("and", .4, .02), ("me", .4, .5)]
-SLOW = [("ohh", 1.8, .1), ("mine", 1.6, .1), ("ohh", 1.9, .1), ("home", 1.7, .1)]
+# 12 quick words (~0.5 s each) = ~6 s: one whole line.
+FAST = [("we", .48, .02)] * 12
+# Four held words of ~2 s: one whole line, held note flagged.
+HELD = [("ohh", 2.0, .1), ("mine", 1.8, .1), ("ohh", 2.0, .1), ("home", 1.9, .1)]
 
 
-def test_window_is_4_to_6_seconds_padded_at_word_edges():
-    w = words(FAST + SLOW)
-    c = C.choose_window(w)
-    assert 4.0 - 1e-6 <= c["dur"] <= 6.0 + 1e-6, c
-    starts = {x["start"] for x in w}
-    ends = {x["end"] for x in w}
-    assert c["start"] in starts and c["end"] in ends          # phrase boundaries
-    assert abs((c["end"] - c["start"]) + C.PRE_S + C.TAIL_S - c["dur"]) < 1e-3
-    assert (C.PRE_S, C.TAIL_S) == (0.30, 0.20)
-    assert abs(c["pad_end"] - (c["end"] + 0.20)) < 1e-9
-
-
-def test_prefers_dense_onsets_over_held_notes():
-    c = C.choose_window(words(FAST + SLOW))
-    assert c["onsets_per_s"] >= C.MIN_ONSETS_PER_S and c["held_s"] <= C.MAX_HELD_WORD_S
-    assert "HELD_NOTE" not in c["flags"]
-    assert c["start"] < 4.0                                    # inside the fast part
-
-
-def test_all_held_notes_picks_the_shortest_and_marks_it():
-    c = C.choose_window(words(SLOW))
-    assert "HELD_NOTE" in c["flags"] and c["held_s"] > C.MAX_HELD_WORD_S
-    assert "SPARSE_ONSETS" in c["flags"]
-
-
-def test_prefers_p_b_m_f_v_w_words_all_else_equal():
-    plain = [("sun", .5, .0), ("sky", .5, .0), ("sea", .5, .0), ("rain", .5, .0),
-             ("star", .5, .0), ("star", .5, .0), ("sun", .5, .0), ("sky", .5, .0),
-             ("sea", .5, .6)]
-    lipsy = [("mom", .5, .0), ("baby", .5, .0), ("moon", .5, .0), ("free", .5, .0),
-             ("very", .5, .0), ("wind", .5, .0), ("map", .5, .0), ("buy", .5, .0),
-             ("fire", .5, .0)]
-    c = C.choose_window(words(plain, 0) + words(lipsy, 12))
-    assert c["start"] >= 12 and c["lip_words"] >= 6, c
-
-
-def test_cuts_at_a_real_rest_when_one_exists():
-    c = C.choose_window(words(FAST + FAST))
-    w = words(FAST + FAST)
-    gaps = {x["start"] for i, x in enumerate(w) if i == 0 or x["start"] - w[i - 1]["end"] >= C.MIN_REST_S}
-    assert c["start"] in gaps
-
-
-def test_different_line_per_clip_for_a_repeated_hook():
-    hook = [("ohh", .4, .0), ("my", .4, .0), ("love", .4, .0), ("is", .4, .0),
-            ("home", .4, .0), ("again", .4, .0), ("now", .4, .0), ("hold", .4, .0),
-            ("me", .4, .0), ("close", .4, .0), ("sing", .4, .0), ("it", .4, .0)]
-    w = words(hook + [("x", .1, 1.0)] + hook[::-1])
-    first = C.choose_window(w)
-    second = C.choose_window(w, used_lines=(first["words"],))
-    assert second["words"] != first["words"]
-
-
-def test_start_of_track_clamps_pre_roll_and_bad_input_refused():
-    c = C.choose_window(words([("ah", .5, .02)] * 9))
-    assert c["pad_start"] >= 0.0
-    for bad in ([], [{"word": "x", "start": 1.0, "end": 1.0}]):
-        try:
-            C.choose_window(bad)
-        except C.LipsyncClipsError as e:
-            assert e.code == C.BAD_PLAN
-        else:
-            raise AssertionError
+def raises(code, fn, *a, **kw):
     try:
-        C.choose_window(words([("hi", .5, .0)] * 3))           # only 1.5 s of words
+        fn(*a, **kw)
     except C.LipsyncClipsError as e:
-        assert e.code == C.BAD_PLAN
-    else:
-        raise AssertionError("a window under 4 s was returned")
+        assert e.code == code, e.code
+        return
+    raise AssertionError("did not refuse")
+
+
+def test_the_whole_line_is_the_piece():
+    w = words(FAST)
+    c = C.choose_window(w)
+    span = w[-1]["end"] - w[0]["start"]
+    assert c["start"] == w[0]["start"] and c["end"] == w[-1]["end"]
+    assert abs(c["audio_s"] - span) < 1e-3
+    assert abs(c["dur"] - (span + C.PRE_S + C.TAIL_S)) < 1e-3
+    assert c["whole_sentence"] is True and c["counts_as"] == 1
+    assert c["stitch"] is False
+    assert abs(c["pad_end"] - (c["end"] + C.TAIL_S)) < 1e-9
+    assert "HELD_NOTE" not in c["flags"] and c["held_s"] <= C.MAX_HELD_WORD_S
+    assert c["lip_words"] == 12, c                                   # every "we" is lip-friendly
+
+
+def test_held_note_and_slow_passage_are_flags_only():
+    c = C.choose_window(words(HELD))          # 7.7 s
+    assert "HELD_NOTE" in c["flags"] and "SLOW_ONSETS" in c["flags"]
+    assert c["held_s"] == 2.0 and c["onsets_per_s"] < C.MIN_ONSETS_PER_S
+    assert c["start"] == 0.0 and c["audio_s"] > 7.0
+
+
+def test_under_five_seconds_refused_not_trimmed():
+    raises(C.AUDIO_TOO_SHORT, C.choose_window, words([("hi", .5, .0)] * 5))
+
+
+def test_over_thirty_seconds_refused_to_the_stitch():
+    raises(C.AUDIO_TOO_LONG, C.choose_window, words(FAST * 6))
+
+
+def test_bad_input_and_anchor_clamp():
+    raises(C.BAD_PLAN, C.choose_window, [])
+    raises(C.BAD_PLAN, C.choose_window,
+           [{"word": "x", "start": 1.0, "end": 1.0}])
+    c = C.choose_window(words(FAST), pre=5.0)
+    assert c["pad_start"] == 0.0
+    assert abs(c["pad_end"] - (c["end"] + C.TAIL_S)) < 1e-9
+    assert (C.PRE_S, C.TAIL_S) == (0.30, 0.20)
+
+
+def test_stitch_group_splits_at_a_breath_and_counts_once():
+    # Two ~21 s runs with a 1.5 s breath: over the 30 s top -> two pieces.
+    run = [("hold", 2.0, .1)] * 10
+    passage = words(run) + words(run, 22.5)
+    g = C.plan_stitch_passage(passage)
+    assert g["counts_as"] == 1 and len(g["pieces"]) == 2, g
+    assert all(C.CLIP_MIN_S - 1e-6 <= p["audio_s"]
+               <= C.CLIP_MAX_S + 1e-6 for p in g["pieces"])
+    assert g["joins"] and g["joins"][0]["kind"] == "breath"
+
+
+def test_short_passage_is_one_piece():
+    g = C.plan_stitch_passage(words(FAST))
+    assert len(g["pieces"]) == 1 and g["joins"] == [] and g["counts_as"] == 1
+
+
+def test_over_thirty_with_no_breath_refused():
+    raises(C.STITCH_NOT_ALLOWED, C.split_stitch_group,
+           words([("go", .5, .0)] * 70))
 
 
 if __name__ == "__main__":

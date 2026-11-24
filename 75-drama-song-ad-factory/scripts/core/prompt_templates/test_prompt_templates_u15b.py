@@ -8,7 +8,7 @@ sections 3.2/3.3/3.6 and 8):
       square-bracket markers except the one camera group, and repeat no
       sentence (quality_rules: max_duplicate_sentence_chars 40,
       max_repeated_8gram_ratio 0.04);
-  (b) a deliberately thin spec is FLAG below the floor, and expand() raises
+  (b) a deliberately thin spec is REFUSE below the floor, and expand() raises
       H3_THIN_SPEC -- it never pads;
   (c) a prompt over 6,800 is TRIM; over 7,000 is REFUSE H3_OVER_HARD_MAX;
   (d) a 5,200-char assembled prompt passes Skill 74's prompt-budget under
@@ -117,7 +117,7 @@ def test_six_golden_specs_pass_in_band():
     check("golden prompts have no duplicate sentence (>=40 chars)",
           not dup_bad, dup_bad)
 
-# ---- (b) thin spec: FLAG then H3_THIN_SPEC, never padding -----------------
+# ---- (b) thin spec: REFUSE then H3_THIN_SPEC, never padding ---------------
 def test_thin_spec_flags_then_refuses():
     spec, chars = _specs()["talking-closeup-S07"]
     thin = copy.deepcopy(spec)
@@ -133,8 +133,10 @@ def test_thin_spec_flags_then_refuses():
                       "direction": "Still."}
     prompt, sections = PT.assemble_h3(thin, chars)
     v = PT.check(prompt, sections, model=thin["model"])
-    check("thin spec is FLAG (below floor / section-thin), never PASS",
-          v["verdict"] == "FLAG"
+    # F-PM-1: a thin prompt is a REFUSE, so build() can never let it ship;
+    # expand() then raises H3_THIN_SPEC naming the empty slots.
+    check("thin spec is REFUSE (below floor / section-thin), never PASS or FLAG",
+          v["verdict"] == "REFUSE"
           and any("H3_BELOW_FLOOR" in r or r.startswith("SECTION_THIN")
                   for r in v["reasons"]),
           (v["verdict"], v["reasons"]))
@@ -345,8 +347,8 @@ def test_villain_shot_type_carries_u16_guidance():
     check("the villain prompt still carries no in-prompt compile markers",
           "[compiled:" not in prompt and "[STYLE]" not in prompt)
     v = PT.check(prompt, sections, model=vspec["model"])
-    check("the villain prompt stays inside the band or flags honestly",
-          v["verdict"] in ("PASS", "FLAG", "TRIM"), (v["verdict"], len(prompt)))
+    check("the villain prompt stays inside the band or refuses honestly",
+          v["verdict"] in ("PASS", "REFUSE", "TRIM"), (v["verdict"], len(prompt)))
 
 # ---- (j) shot_planner.prompt_spec_for writes FACTS, never prose -----------
 def test_prompt_spec_for_writes_facts():
@@ -396,6 +398,31 @@ def _refuses_spec(SP, contract, beats=None):
     except SP.PlanError as e:
         return e.code == "PROMPT_SPEC_INCOMPLETE"
 
+
+
+# ---- (k) G-STORY-04: an Avoid sentence that empties a full room is refused --
+def test_empty_room_avoid_refused_on_a_full_shot():
+    spec, chars = _specs()["talking-closeup-S07"]
+    full = copy.deepcopy(spec)
+    full["negatives_extra"] = list(full.get("negatives_extra") or []) + [
+        "No congregation in the pews beyond the two named."]
+    prompt, sections = PT.assemble_h3(full, chars)
+    v = PT.check(prompt, sections, model=full["model"], cast={"singers": 12})
+    check("a T25-class empty-room Avoid is REFUSE on a cast of 12 singers",
+          v["verdict"] == "REFUSE"
+          and any("H3_EMPTY_ROOM" in r for r in v["reasons"]),
+          (v["verdict"], v["reasons"]))
+    v2 = PT.check(prompt, sections, model=full["model"], cast={"singers": 2})
+    check("the same Avoid passes on a two-singer shot (the room may be empty)",
+          v2["verdict"] == "PASS", (v2["verdict"], v2["reasons"]))
+    clean = copy.deepcopy(spec)
+    clean["negatives_extra"] = [x for x in (clean.get("negatives_extra") or [])
+                                if "congregation" not in x.lower()]
+    prompt3, sections3 = PT.assemble_h3(clean, chars)
+    v3 = PT.check(prompt3, sections3, model=clean["model"], cast={"singers": 12})
+    check("a cast-matching prompt with no empty-room sentence passes",
+          v3["verdict"] == "PASS", (v3["verdict"], v3["reasons"]))
+
 def main():
     test_six_golden_specs_pass_in_band()
     test_thin_spec_flags_then_refuses()
@@ -410,6 +437,7 @@ def main():
     test_music_style_text_ends_with_a_period()
     test_villain_shot_type_carries_u16_guidance()
     test_prompt_spec_for_writes_facts()
+    test_empty_room_avoid_refused_on_a_full_shot()
     print()
     if FAILS:
         print("FAILED: %d" % len(FAILS))

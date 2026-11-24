@@ -124,6 +124,10 @@ INTERNAL = {
     "SUBMIT_ALL_READY-EXCEPTION", "LIPSYNC_PICTURE_NOT_GATED",
     "ONSCREEN_TEXT_NOT_CHECKED", "SFX_JOB_NOT_ORDERED",
     "ZERO_ESTIMATE_FOR_PAID_JOB", "REQUEST_PLACEHOLDER",
+    # spend_ledger.stamp_speed: a malformed stamp name or an attempt id that
+    # is not in the ledger. Plumbing faults the operator repairs, same class
+    # as BAD_BILLABLE and NO_SUCH_JOB; four-part fallback still applies.
+    "BAD_STAMP", "NO_SUCH_ATTEMPT",
 }
 
 SCANS = {   # module -> regexes that capture the stop codes it hands back

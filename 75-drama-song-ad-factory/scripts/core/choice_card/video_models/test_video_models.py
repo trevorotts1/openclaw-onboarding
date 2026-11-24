@@ -216,9 +216,14 @@ def _dispatch_choice(n, first_frame=None):
     req["prompt_receipt"] = {"prompt_sha256": hashlib.sha256(req["input"]["prompt"].encode("utf-8")).hexdigest(),
                              "check": {"verdict": "PASS", "reasons": []}}  # H3 only; others ignore it
     fake = Fake74()
+    #: F-QM-4: point dispatch at the LIVE Skill 74 adapter so its registry lookup
+    #: reads `74-kie-live-adapter/references/kie-model-registry.json`. Passing
+    #: this test file (`__file__`) made the resolver seek a registry beside the
+    #: test and log KIE_REGISTRY_UNREADABLE. The fake runner keeps $0 spend.
     env = D.dispatch(model=req["model"], request=req, save_dir=os.path.join(tmp, "out"),
                      ledger_db=ledger, run_id="run-vm", logical_key="k%d" % n, attempt_id="a1",
-                     estimated_cost=100, prompt=req["input"]["prompt"], adapter_path=__file__,
+                     estimated_cost=100, prompt=req["input"]["prompt"],
+                     adapter_path=D.resolve_adapter() or __file__,
                      runner=fake, state_store=state, video_job=True)
     return env, fake.submitted
 

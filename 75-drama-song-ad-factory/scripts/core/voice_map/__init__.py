@@ -1,0 +1,65 @@
+"""voice_map: the Voice Map (plan 3N, row N-117).
+
+Built at set-up from the song alone; one entry per stretch of singing or
+speech, who sings it, its words, its track and how sure the map is. The gate
+and the plan checks refuse before spend, and the Right Voice check names a
+wrong singer as ``WRONG_VOICE_MOUTHED``, MAJOR. Stdlib only, no spend.
+"""
+from .voice_map import (  # noqa: F401
+    ADVANCED_NOT_USED,
+    BACKING_TRACK_ROLES,
+    BLEED_DB,
+    CONFIDENCE,
+    LIPSYNC_MIXED_PARTS,
+    LIPSYNC_WRONG_FACES,
+    LIPSYNC_WRONG_STEM,
+    MAP_PATH,
+    RECORD_PATH,
+    ROLE_TRACKS,
+    ROLES,
+    SCHEMA_VERSION,
+    SEVERITY,
+    STEP_S,
+    TEST_RESULTS,
+    TOOL_NAME,
+    TOOL_VERSION,
+    TRACK_BACKING,
+    TRACK_INSTRUMENTAL,
+    TRACK_VOCALS,
+    VOICE_MAP_DISPUTED,
+    VOICE_MAP_INCOMPLETE,
+    VOICE_MAP_MISSING,
+    VOICE_STEM_BLEED,
+    WRONG_VOICE_MOUTHED,
+    VoiceMapError,
+    build,
+    build_and_gate,
+    check_plan,
+    fallback,
+    gate,
+    load,
+    measure_levels,
+    parse_rms,
+    record,
+    require_plan,
+    right_voice,
+    singers,
+    track_for,
+    track_role,
+    tracks_by_role,
+    tracks_singing,
+    write,
+)
+
+__all__ = [
+    "ADVANCED_NOT_USED", "BACKING_TRACK_ROLES", "BLEED_DB", "CONFIDENCE", "LIPSYNC_MIXED_PARTS",
+    "LIPSYNC_WRONG_FACES", "LIPSYNC_WRONG_STEM", "MAP_PATH", "RECORD_PATH",
+    "ROLE_TRACKS", "ROLES", "SCHEMA_VERSION", "SEVERITY", "STEP_S",
+    "TEST_RESULTS", "TOOL_NAME", "TOOL_VERSION", "TRACK_BACKING",
+    "TRACK_INSTRUMENTAL", "TRACK_VOCALS", "VOICE_MAP_DISPUTED",
+    "VOICE_MAP_INCOMPLETE", "VOICE_MAP_MISSING", "VOICE_STEM_BLEED",
+    "WRONG_VOICE_MOUTHED", "VoiceMapError", "build", "build_and_gate",
+    "check_plan", "fallback", "gate", "load", "measure_levels", "parse_rms",
+    "record", "require_plan", "right_voice", "singers", "track_for",
+    "track_role", "tracks_by_role", "tracks_singing", "write",
+]

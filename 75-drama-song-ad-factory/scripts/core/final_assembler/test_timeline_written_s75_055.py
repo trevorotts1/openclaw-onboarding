@@ -127,14 +127,18 @@ def test_planning_step_writes_the_timeline(tmp):
     # 2. every key the assembler's own checks demand.
     check("schema version", tl.get("schema_version") == A.TIMELINE_SCHEMA,
           tl.get("schema_version"))
-    check("30 fps master", tl.get("fps") == 30, tl.get("fps"))
+    check("24 fps master (N-23)", tl.get("fps") == 24, tl.get("fps"))
     check("frame size recorded",
           isinstance(tl.get("width"), int) and isinstance(tl.get("height"), int))
     check("soundtrack is the picked song",
           tl.get("song_path") == "music/picked-song.mp3", tl.get("song_path"))
     check("run id comes from the session record",
           tl.get("run_id") == RUN_ID, tl.get("run_id"))
-    check("run dir is the edit folder's parent", tl.get("run_dir") == "..",
+    # F-RUNDIR: run_dir is written ABSOLUTE (the edit folder's parent), never
+    # the bare ".." that resolved against the process cwd.
+    check("run dir is the edit folder's parent, absolute",
+          os.path.isabs(tl.get("run_dir") or "")
+          and os.path.abspath(tl.get("run_dir")) == os.path.abspath(run),
           tl.get("run_dir"))
     check("chosen length carried from control/method.json",
           tl.get("chosen_length_s") == 30, tl.get("chosen_length_s"))
@@ -189,11 +193,15 @@ def test_planning_step_writes_the_timeline(tmp):
           all(isinstance(s.get("motion_score"), dict) for s in plan["segments"])
           and len(plan.get("lines") or []) == 3)
 
-    # 4. atomic + repository-safe: no temp file left, no absolute path baked in.
+    # 4. atomic + repository-safe: no temp file left. The single-writer lock
+    #    (F-ASM-6) sits beside the timeline by design, so only a stray temp
+    #    file would fail. F-RUNDIR makes run_dir the ABSOLUTE run folder.
     check("no temporary file left beside the timeline",
-          os.listdir(os.path.dirname(expected)) == ["timeline.json"],
+          sorted(os.listdir(os.path.dirname(expected))) ==
+          [".timeline.lock", "timeline.json"],
           os.listdir(os.path.dirname(expected)))
-    check("no operator path baked into the timeline", tmp not in text)
+    check("run_dir is the absolute run folder (F-RUNDIR), not a bare '..'",
+          tl.get("run_dir") == os.path.abspath(run), tl.get("run_dir"))
 
     # Re-planning replaces the file and still validates.
     again = A.plan_run_timeline(run)

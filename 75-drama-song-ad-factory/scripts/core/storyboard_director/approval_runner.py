@@ -354,6 +354,18 @@ def _present(run_dir, shots, contracts, stills, send, st=None, reason=None):
     return result
 
 
+def check_approval_receipt(reply):
+    """Lock 7a (NEVER-AGAIN): approval only via approve() with recorded reply."""
+    import never_again as _na
+    return _na.check_approval(reply)
+
+
+def check_waiver_receipt(receipt):
+    """Lock 7b (NEVER-AGAIN): waiver only via Trevor-signed receipt."""
+    import never_again as _na
+    return _na.check_waiver(receipt)
+
+
 def _approve(run_dir, shots, contracts, stills, choice, st=None, reply=None):
     # Re-read authority even for a direct internal call; supplied JSON is not
     # proof that the client saw these current revisions.

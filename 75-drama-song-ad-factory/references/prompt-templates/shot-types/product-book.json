@@ -1,7 +1,7 @@
 {
   "shot_type": "product-book",
   "purpose": "Product reveal or book shot (beat 8 product intro, demonstration, CTA support). Book campaigns use the U10 orientation contract and the U11 printed-page block.",
-  "camera_default": "[Static shot]; a slow [Push in] is the only allowed move",
+  "camera_default": "[Push in] slow is the default; [Static shot] only when the product must hold perfectly still",
   "camera_allowed": [
     "[Static shot]",
     "[Push in]"

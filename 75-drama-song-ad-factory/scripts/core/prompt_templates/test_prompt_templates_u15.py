@@ -61,11 +61,12 @@ def test_every_layer_resolves():
     looks = {}
     for look_id in PT.LOOKS:
         looks[look_id] = PT.load("look", look_id)
-    check("all five look files load", sorted(looks) == sorted(PT.LOOKS), sorted(looks))
+    check("every look file loads (six card looks, N-37)",
+          sorted(looks) == sorted(PT.LOOKS), sorted(looks))
     modes = {}
     for mode_id in PT.MODES:
         modes[mode_id] = PT.load("mode", mode_id)
-    check("all five mode files load", sorted(modes) == sorted(PT.MODES), sorted(modes))
+    check("every mode file loads", sorted(modes) == sorted(PT.MODES), sorted(modes))
     shots = {}
     for shot_id in PT.SHOT_TYPES:
         shots[shot_id] = PT.load("shot_type", shot_id)
@@ -80,7 +81,8 @@ def test_every_layer_resolves():
     unknown = sorted({m for _, m in pairs if m not in modes})
     check("every look mode and beat map resolves to a mode file", not unknown, unknown)
     check("every look x mode x shot type resolves",
-          bool(pairs) and len(looks) == 5 and len(modes) == 5 and len(shots) == 6
+          bool(pairs) and len(looks) == len(PT.LOOKS) and len(modes) == len(PT.MODES)
+          and len(shots) == 6
           and len(pairs) >= 8, (len(looks), len(modes), len(shots), len(pairs)))
     # the other three layers load too
     check("manifest, length classes and all three music styles load",
@@ -113,12 +115,27 @@ def test_caps_from_the_67_catalog():
     check("H3 cap source names the 67 catalog, not the manifest",
           "67-kie-video" in row["source"] and "manifest" not in row["source"], row["source"])
 
-def test_caps_from_the_manifest_for_the_avatar():
-    row = PT.caps("kling/ai-avatar-standard", "prompt")
-    check("avatar prompt cap is 2500", row["cap"] == 2500, row)
-    check("avatar cap status is UNVERIFIED", row["status"] == "UNVERIFIED", row)
-    check("avatar cap source names the manifest (no catalog row carries it)",
-          "manifest" in row["source"], row["source"])
+def _avatar_retired():
+    try:
+        PT.assemble_kling_avatar("realism", "woman", "says", "weary", "Her")
+    except PT.PromptTemplateError as e:
+        return e.code in ("LIPSYNC_PROMPT_PRESENT", "LIPSYNC_MODEL_MISMATCH")
+    return False
+
+def test_caps_from_the_manifest_for_the_lip_sync_model():
+    # N-08 / S-42: the lip-sync model is OmniHuman 2.0 and takes NO prompt.
+    # The retired Kling avatar row is gone; the manifest still answers for the
+    # OmniHuman model, and its cap is 0 (no prompt is ever sent).
+    row = PT.caps("omnihuman-2-0", "prompt")
+    check("the lip-sync model's prompt cap is 0 (no prompt)", row["cap"] == 0, row)
+    check("the lip-sync model's cap status is NONE", row["status"] == "NONE", row)
+    check("the lip-sync cap source names the manifest and N-08",
+          "manifest" in row["source"] and "N-08" in row["source"], row["source"])
+    # The manifest no longer carries an avatar row. The 67 catalog still does,
+    # so caps() answers from the catalog; the template layer itself never
+    # assembles a Kling avatar prompt (assemble_kling_avatar raises).
+    check("the retired Kling avatar template cannot assemble a prompt",
+          _avatar_retired(), "assemble_kling_avatar did not raise")
 
 def test_manifest_is_the_fallback_not_a_second_catalog():
     # every other H3 shape reads the catalog too, so no second table can drift
@@ -195,14 +212,15 @@ def test_look_text_exists_once():
         block = PT.load("mode", mode_id).get("h3_block")
         if block:
             blocks[mode_id] = block
-    check("the four modes with an h3_block have distinct text",
-          len(blocks) == 4 and len(set(blocks.values())) == 4, sorted(blocks))
+    check("every mode with an h3_block has distinct text",
+          len(blocks) >= 4 and len(set(blocks.values())) == len(blocks),
+          sorted(blocks))
 
 def main():
     test_every_layer_resolves()
     test_unknown_layer_and_missing_file_refuse()
     test_caps_from_the_67_catalog()
-    test_caps_from_the_manifest_for_the_avatar()
+    test_caps_from_the_manifest_for_the_lip_sync_model()
     test_manifest_is_the_fallback_not_a_second_catalog()
     test_caps_agree_with_u6_prompt_limits()
     test_mode_blocks_carry_their_record_phrases()

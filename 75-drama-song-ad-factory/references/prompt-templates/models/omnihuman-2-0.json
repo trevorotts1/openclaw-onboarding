@@ -1,0 +1,40 @@
+{
+  "model_block": "omnihuman-2-0",
+  "model_id": "omnihuman-2-0",
+  "locked": "Trevor, 2026-11-23 about 2:25 PM: the lip-sync model on every run, talking or singing. No option menu, no alternative, no backup. Kling Avatar is retired.",
+  "no_prompt": true,
+  "inputs": {
+    "image_urls": "Exactly one picture, passed as a one-item list. The gated lip-sync keyframe for these exact bytes (picture_gate PASS). 300 to 6000 pixels a side, under 30 MB, width over height between 0.4 and 2.5.",
+    "audio_url": "The on-screen speaker's own whole sentence cut from the LEAD-VOCAL STEM (separate-vocals), never the mix. wav or mp3, under 15 MB, 4 to 300 seconds.",
+    "enable_watermark": false,
+    "prompt": "NONE. This model gets no prompt at all. The face, wardrobe, look and expression live in the picture alone."
+  },
+  "refusals": {
+    "LIPSYNC_PROMPT_PRESENT": "a lip-sync job that carries a prompt",
+    "LIPSYNC_WATERMARK_ON": "enable_watermark is not false (the provider default is true)",
+    "LIPSYNC_MODEL_MISMATCH": "any model id but omnihuman-2-0",
+    "LIPSYNC_AUDIO_TOO_SHORT": "audio under 5.0 s (the model's own floor is 4 s; Trevor's floor for a piece is 5 s)",
+    "LIPSYNC_AUDIO_TOO_LONG": "one piece over 30 s; the fix is the stitch (N-112)",
+    "LIPSYNC_CUTS_SENTENCE": "the audio starts or ends inside a sentence"
+  },
+  "picture_rules": {
+    "source": "step-2 keyframe made image-to-image from each character's master, the scene's wardrobe picture and the expression sheet that matches the sentence's emotion (3G.5)",
+    "framing": "chest-up, one to three faces large in frame, only the people who sing that phrase; head and shoulders with room above the head and beside the face so the head can move",
+    "expression": "the sentence's own emotion, intensity and six facial cues; one step stronger on pain, worry, exhaustion and resolve lines (3G.6 lever 2)",
+    "motion": "There is no prompt, so the picture is the only place the take's motion can be set (R-1). For a singing or spoken phrase the picture briefs ONE downbeat body action for the clip (a sway, a clap, a robe swing, a weight shift) and is framed chest-up or wider with room around the shoulders, never tighter than chest-up, so the body movement reads. A close-up tighter than chest-up freezes the take: a small head movement was measured at a 0.0063 motion maximum on a Kling nod take, under the 0.012 floor, because the framing left no body to move. A motion-floor waiver is per shot with a written cause, never a blanket waiver across many shots.",
+    "gate": "the picture check of section 3C passes before any paid job; a frame grabbed from a clip is never allowed"
+  },
+  "audio_rules": {
+    "source": "lead-vocal stem only (Suno separate-vocals), never the mix, never a narrator or another character",
+    "piece": "one or more WHOLE sentences, 5 to 30 seconds per piece (section 3.3a); never padded with silence, stretched or cut; lines with no breath between them (gap of 1.0 s or less, same singer) belong together",
+    "over_30s": "a passage longer than 30 seconds is stitched: split only at a breath or a line boundary, consecutive pieces made from the same picture, laid back to back (N-112)",
+    "provider_audio_window_cap": "The provider accepts audio of 4 to 300 seconds and no more. A short take cannot be padded past the provider window, and the model returns the audio's length rounded up to a whole second. There is no padding flag: the window is the audio you send, nothing else.",
+    "retime_to_actual": "When the measured take is not the length the plan expected, retime the plan window to the measured take length (lay the take at the sentence's own song time and use it for the sentence's length, cutting the part of a second the model adds at the end). Never hand-edit the timeline and never stretch, speed up or freeze the take to fit a window.",
+    "cleanliness": "no reverb tail across the cut; the take is cut at the sentence's length; mono wav or 320 kbps mp3, 44.1 or 48 kHz"
+  },
+  "output": "720 by 1280 at 24 frames per second (the master's own rate); clip length = the audio length rounded up to a whole second",
+  "price": "14 credits per second of the rounded-up clip (56 for 4 s, 70 for 5, 84 for 6, 98 for 7, 112 for 8, 308 for 22). A credit is half a cent. A failed or refused job costs 0.",
+  "tries": "One take per piece. A second paid take only on a named defect (the two-try rule stands). An 'upstream overloaded' refusal costs 0 and is re-sent at once, then every 30 seconds, up to 5 sends; it does not count against the two-try rule.",
+  "planner_note": "F-LIP-5: the planner sets a window, then the measured take sets the truth. If the take comes back shorter or longer than the window (the provider caps the audio window at 4 to 300 s and returns the audio rounded up to a whole second), retime the plan window to the measured take length rather than hand-editing the timeline. Show the retimed seconds on the receipt so the length-class table and the plan cannot drift.",
+  "eyeball_check": "Every take gets a contact sheet of the whole frame at 4 frames per second, looked at by an eye (an agent on a picture-seeing model, or a person); a take with no eye record does not enter the timeline (LIP_TAKE_NOT_EYE_CHECKED). A scan is one input, never a pass by itself."
+}

@@ -17,8 +17,10 @@ advice a builder can skip.
                        every deletion logged, a failed one prints WARNING.
 4. kie_request(fn)     KIE pacing, two separate limiters (references/kie-rate-limit.md):
                        generation=True  NEW generation requests (submit/create) draw from one
-                         20-per-rolling-10-s file-lock token bucket, shared across processes,
-                         one bucket per KIE key.
+                         20-per-rolling-15-s file-lock token bucket, shared across processes,
+                         one bucket per KIE key. One number everywhere (plan S-13,
+                         Trevor November 23): 20 requests per 15 seconds, a little
+                         under KIE's documented 20 per 10 s.
                        generation=False status polls, health, record-info, preflight, save use
                          a gentler per-process limiter (default 1 request/s,
                          DSAF_KIE_POLL_INTERVAL_S) and never touch the generation bucket.
@@ -53,7 +55,7 @@ POLL_S = 15.0
 MAX_WAIT_S = 20 * 60
 NICE = 10
 MAX_THREADS = 4
-KIE_MAX, KIE_WINDOW_S = 20, 10.0    # KIE: 20 NEW generation requests / 10 s per account
+KIE_MAX, KIE_WINDOW_S = 20, 15.0    # KIE: 20 NEW generation requests / 15 s per account (S-13)
 POLL_ENV = "DSAF_KIE_POLL_INTERVAL_S"   # gentle limiter for polls/health; default 1 s
 POLL_DEFAULT_S = 1.0
 

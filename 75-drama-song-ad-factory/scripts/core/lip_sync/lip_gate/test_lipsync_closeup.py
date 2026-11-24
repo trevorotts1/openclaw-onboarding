@@ -35,7 +35,7 @@ def test_lipsync_closeup():
     L.run_gate("l1", gen, lambda clip: bad, source_image=pic,
                image_check=lambda img: {"pass": True},
                retry_input={"window": "next-best"}, person_verdict="DEFECT", acquire=lambda: None)
-    assert seen == [("kling", pic), ("kling", pic)], seen
+    assert seen == [(L.PROVIDER, pic), (L.PROVIDER, pic)], seen
 
     # 3. QC: missing close-up fails; unclear mouth fails; clear passes
     assert L.check_reference_set(refs, ["Ana", "Ben"], lambda e: True)["pass"]

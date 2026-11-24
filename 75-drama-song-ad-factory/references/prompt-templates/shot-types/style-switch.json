@@ -1,7 +1,7 @@
 {
   "shot_type": "style-switch",
   "purpose": "The clip on either side of a hybrid look switch (Sketch to Life, Canvas to Life, Canvas to 3D). The dissolve itself happens in the edit (0.3-0.4 s); the two clips must meet on one matched pose or framing.",
-  "camera_default": "[Static shot] for the last second of the outgoing clip and the first second of the incoming clip",
+  "camera_default": "a slow [Push in] is the default; [Static shot] only for the last second of the outgoing clip and the first second of the incoming clip that must hold the matched pose",
   "camera_allowed": [
     "[Static shot]",
     "[Push in]"

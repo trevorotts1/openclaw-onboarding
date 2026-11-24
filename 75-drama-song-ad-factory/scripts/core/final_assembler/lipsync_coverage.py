@@ -48,12 +48,18 @@ SCHEMA_VERSION = "1.0.0"                               # final_assembler receipt
 QC_SCHEMA_VERSION = "1.0.0"                            # core/qc_gate.py
 CHECK = "final_edit"                                   # 17.5 final edit QC
 
-# The two documented reason codes (and no others).
+# The documented reason codes (and no others).
 LINES_TOO_FEW = "LIPSYNC_LINES_TOO_FEW"
 COVERAGE_SHORT = "LIPSYNC_COVERAGE_SHORT"
+#: LIP-07: the first lip-sync clip must start inside the opening window
+#: (lipsync_clips.OPENING_WINDOW_S, 12 s or the whole ad when shorter). The
+#: window lives in lipsync_clips; this module only enforces it at assembly.
+OPENING_NOT_ARTICULATED = _LC.OPENING_SHORT
 
 # Rule constants; acceptance-profile.json "lipsync" overrides when present.
-MIN_LINES = _LC.MIN_CLIPS_FLOOR           # always at least 3 lines (floor)
+# N-101: the floor of 3 applies from 90 s up only (lipsync_clips.budget);
+# under 90 s the clip floor comes from the 25% seconds target / 30 s piece
+# top, not from a fixed 3. No module-level floor is kept here.
 SCALE_SHARE = _LC.TOTAL_PER_REF_S[0] / _LC.REF_LENGTH_S   # 0.25: 15 s per 60 s
 
 EXIT = {"ok": 0, "error": 1, "rejected": 5}
@@ -69,8 +75,12 @@ class LipsyncCoverageError(Exception):
 
 
 def _numbers(profile=None):
-    """Thresholds from the shipped acceptance profile, constants otherwise."""
-    d = {"min_lines": MIN_LINES, "scale_share": SCALE_SHARE}
+    """Thresholds from the shipped acceptance profile, constants otherwise.
+
+    ``min_lines`` only comes from the profile when one is supplied; with no
+    profile the clip floor is lipsync_clips.budget's alone (N-101).
+    """
+    d = {"min_lines": None, "scale_share": SCALE_SHARE}
     if isinstance(profile, dict):
         block = profile.get(_PROFILE_KEY)
         if block is not None:
@@ -88,10 +98,12 @@ def _numbers(profile=None):
 
 
 def required_lines(ad_length_s, profile=None):
-    """Minimum lip-sync clips for one ad length: 3 per 60 s, scaled, never
-    below the profile floor (3)."""
-    return max(_numbers(profile)["min_lines"],
-               _LC.budget(float(ad_length_s))["min_clips"])
+    """Minimum lip-sync clips for one ad length (N-101): the budget's
+    min_clips -- floor of 3 from 90 s up, seconds-to-pieces under 90 s --
+    raised only when a shipped profile names a higher floor."""
+    budget_min = _LC.budget(float(ad_length_s))["min_clips"]
+    prof = _numbers(profile)["min_lines"]
+    return budget_min if prof is None else max(prof, budget_min)
 
 
 def load_profile(path=None):
@@ -110,19 +122,24 @@ def required_total_s(ad_length_s, profile=None):
 
 
 def check_lipsync_coverage(ad_length_s, lipsync_lines_count, lipsync_total_s,
-                           profile=None):
+                           profile=None, first_clip_start_s=None):
     """E6 rule check. Returns pass or the reason (never raises on values).
 
     ad_length_s         — final ad length in seconds
     lipsync_lines_count — number of distinct lip-sync LINES in the ad
     lipsync_total_s     — total lip-sync footage in seconds
+    first_clip_start_s  — optional; the timeline's first marked clip start.
+                          When given, the 12 s opening rule is enforced at
+                          assembly (LIP-07) with the window from
+                          lipsync_clips.check_opening.
 
     Returns {"pass": True} on a pass, else
     {"pass": False, "reason_code": <code or codes joined by "+">,
      "detail": <plain-English>, "evidence": {...numbers...}}.
-    The only reason codes are LIPSYNC_LINES_TOO_FEW and
-    LIPSYNC_COVERAGE_SHORT. Nonsensical input (negative line count or
-    total, non-positive ad length, non-numeric values) raises
+    The only reason codes are LIPSYNC_LINES_TOO_FEW,
+    LIPSYNC_COVERAGE_SHORT and LIPSYNC_OPENING_NOT_ARTICULATED (only when a
+    first_clip_start_s is supplied). Nonsensical input (negative line count
+    or total, non-positive ad length, non-numeric values) raises
     LipsyncCoverageError — fail closed, never a silent pass.
     """
     for name, val in (("ad_length_s", ad_length_s),
@@ -154,26 +171,41 @@ def check_lipsync_coverage(ad_length_s, lipsync_lines_count, lipsync_total_s,
         flags.append("lip-sync %.2f s is %.1f%% short of the "
                      "%.2f s goal: accepted with a flag"
                      % (lipsync_total_s, band["gap_pts"], floor_s))
+    opening = None
+    if first_clip_start_s is not None:
+        opening = _LC.check_opening(first_clip_start_s, ad_length_s)
+        if not opening["pass"]:
+            codes.append(OPENING_NOT_ARTICULATED)
+    extra = ({} if opening is None else
+             {"opening_window_s": opening["opening_window_s"],
+              "first_clip_start_s": first_clip_start_s})
     if not codes:
         return {"pass": True, "flags": flags,
-                "evidence": {"ad_length_s": ad_length_s,
-                             "lipsync_lines_count": lipsync_lines_count,
-                             "lipsync_total_s": lipsync_total_s,
-                             "required_lines_min": need_lines,
-                             "required_total_s": floor_s}}
+                "evidence": dict({"ad_length_s": ad_length_s,
+                                  "lipsync_lines_count": lipsync_lines_count,
+                                  "lipsync_total_s": lipsync_total_s,
+                                  "required_lines_min": need_lines,
+                                  "required_total_s": floor_s}, **extra)}
+    if OPENING_NOT_ARTICULATED in codes:
+        detail = ("lip-sync opening not articulated: the first lip-sync clip "
+                  "starts at %.2f s; the first %.0f s must be articulated"
+                  % (float(first_clip_start_s),
+                     opening["opening_window_s"]))
+    else:
+        detail = ("lip-sync coverage %s: %d line(s) of %.2f s in a "
+                  "%.1f s ad; the rule needs at least %d line(s) and "
+                  "%.2f s of lip-sync"
+                  % ("short" if COVERAGE_SHORT in codes else "thin",
+                     lipsync_lines_count, lipsync_total_s,
+                     ad_length_s, need_lines, floor_s))
     return {"pass": False,
             "reason_code": "+".join(sorted(codes)),
-            "detail": ("lip-sync coverage %s: %d line(s) of %.2f s in a "
-                       "%.1f s ad; the rule needs at least %d line(s) and "
-                       "%.2f s of lip-sync"
-                       % ("short" if COVERAGE_SHORT in codes else "thin",
-                          lipsync_lines_count, lipsync_total_s,
-                          ad_length_s, need_lines, floor_s)),
-            "evidence": {"ad_length_s": ad_length_s,
-                         "lipsync_lines_count": lipsync_lines_count,
-                         "lipsync_total_s": lipsync_total_s,
-                         "required_lines_min": need_lines,
-                         "required_total_s": floor_s}}
+            "detail": detail,
+            "evidence": dict({"ad_length_s": ad_length_s,
+                              "lipsync_lines_count": lipsync_lines_count,
+                              "lipsync_total_s": lipsync_total_s,
+                              "required_lines_min": need_lines,
+                              "required_total_s": floor_s}, **extra)}
 
 
 def to_qc_record(result, run_id, stage, reviewer, check_id=None,

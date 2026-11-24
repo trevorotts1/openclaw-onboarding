@@ -357,7 +357,8 @@ def test_2min_rows_equal_90s_rate_derivation():
 def test_card_renders_plain_sentences_and_recommended():
     card = CG.render_card()
     vs = card["video_style"]
-    check("five looks, one plain line each", len(vs) == 5, repr(vs))
+    check("one plain line per card look",
+          len(vs) == len(D.LOOKS.LOOK_ORDER), repr(vs))
     check("every video-style line ends with a period",
           all(l.rstrip().endswith(".") for l in vs), repr(vs))
     check("Lifelike 3D shown RECOMMENDED",

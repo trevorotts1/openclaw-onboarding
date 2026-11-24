@@ -33,7 +33,8 @@ if CORE not in sys.path:
 
 import shot_planner.motion_score as MS            # noqa: E402
 from shot_planner.motion_score import (           # noqa: E402
-    MOTION_SCORE_LOW, CLIP_LOW_MOTION, MotionScoreError,
+    MOTION_SCORE_LOW, CLIP_LOW_MOTION, MOTION_FLAG_ADVISORY,
+    CLIP_FROZEN_CONFIRMED, MotionScoreError,
     motion_score, frame_diff_score, gate_clips, to_motion_qc_record,
 )
 
@@ -175,11 +176,21 @@ def test_gate_flags_before_assembly():
     rows = [{"clip_id": "clip-still", "motion_score": still},
             {"clip_id": "clip-move", "motion_score": moving}]
     res = gate_clips(rows)
-    check("gate rejects when the still clip is flagged",
-          res["outcome"] == "rejected" and res["reason_code"] == CLIP_LOW_MOTION,
+    # N-03: a low score is ADVICE; the take is kept and set aside for a look.
+    check("a low score advises, it does not block",
+          res["outcome"] == "ok" and res["reason_code"] == MOTION_FLAG_ADVISORY,
           json.dumps(res)[:120])
     check("gate names the flagged clip", res["flagged"] == ["clip-still"],
           repr(res["flagged"]))
+    check("flagged-and-kept is listed on the receipt",
+          res["kept_flagged"] == ["clip-still"] and res["refused"] == [],
+          repr(res.get("kept_flagged")))
+    # N-03: refused only when a look confirms the take is frozen.
+    frozen = gate_clips(rows, looks={"clip-still": {"frozen": True}})
+    check("a look-confirmed frozen take is refused",
+          frozen["outcome"] == "rejected"
+          and frozen["reason_code"] == CLIP_FROZEN_CONFIRMED
+          and frozen["refused"] == ["clip-still"], json.dumps(frozen)[:120])
     check("gate carries scores", res["scores"]["clip-move"] >= 0.02,
           repr(res["scores"]))
     res2 = gate_clips([{"src": "clip-move", "motion_score": moving},
@@ -202,15 +213,17 @@ def test_gate_flags_before_assembly():
 
 
 def test_qc_record_verdicts():
-    """to_motion_qc_record: FAIL on flagged/unscored, PASS on moving."""
+    """to_motion_qc_record: PASS on a flagged-but-kept take (N-03), FAIL on
+    an unscored row; a look-confirmed frozen take is the refusal."""
     reviewer = {"identity": "qc/f12", "session": "unit-test",
                 "authority": "manual Part F F12"}
     still = motion_score(frame_stats=STILL_STATS)
     moving = motion_score(frame_stats=MOVING_STATS)
     rec = to_motion_qc_record(
         [{"clip_id": "c1", "motion_score": still}], reviewer, "run-1")
-    check("flagged clip -> FAIL record",
-          rec["verdict"] == "FAIL" and rec["reason_code"] == CLIP_LOW_MOTION,
+    check("flagged-but-kept take -> PASS record (advice)",
+          rec["verdict"] == "PASS"
+          and rec["reason_code"] == MOTION_FLAG_ADVISORY,
           json.dumps(rec)[:140])
     rec2 = to_motion_qc_record(
         [{"clip_id": "c1", "motion_score": moving}], reviewer, "run-1")
@@ -296,29 +309,28 @@ def test_assembler_receipt_and_gate():
             {"src": "lip3.mp4", "dur": 1.5, "lids": ["L3"], "ms": moving},
             {"src": "broll.mp4", "dur": 3.0, "ms": moving}])
         rec2 = A.assemble(low_tl, os.path.join(tmp, "out.mp4"), dry_run=True)
-        check("still clip refused before render",
-              rec2["outcome"] == "error"
-              and rec2["reason_code"] == CLIP_LOW_MOTION,
-              json.dumps(rec2)[:160])
-        check("refusal names exactly the still clip",
-              rec2["evidence"]["flagged"]
+        # N-03: a still clip is advice, not a block; assembly proceeds and the
+        # flagged-and-kept take rides the receipt.
+        check("still clip is kept with an advisory flag (N-03)",
+              rec2["outcome"] == "ok"
+              and rec2["evidence"]["motion"]["kept_flagged"]
               == [os.path.join(tmp, "lip2.mp4")],
-              repr(rec2.get("evidence", {}).get("flagged")))
+              json.dumps(rec2)[:200])
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_gate_refuses_flag_overridden_measured_score():
-    """F12 fail-closed: a supplied flagged:false can never override a
-    measured sub-threshold score (the gate's fail-open half)."""
+    """N-03: a measured sub-threshold row (flagged:false or not) asks for a
+    look; without a look it is kept, and only a look confirms a refusal."""
     forced = {"clip_id": "clip-forced-ok",
               "motion_score": {"score": 0.001, "flagged": False}}
     res = gate_clips([forced])
-    check("sub-threshold + flagged:false -> refused",
-          res["outcome"] == "rejected"
-          and res["reason_code"] == CLIP_LOW_MOTION
-          and res["flagged"] == ["clip-forced-ok"], json.dumps(res))
+    check("sub-threshold + flagged:false -> kept, advised",
+          res["outcome"] == "ok"
+          and res["reason_code"] == MOTION_FLAG_ADVISORY
+          and res["kept_flagged"] == ["clip-forced-ok"], json.dumps(res))
     pan = motion_score(frame_stats=PAN_OVER_STILL_STATS)
     check("pan-over-still fixture measures below threshold",
           pan["score"] < MOTION_SCORE_LOW, repr(pan))
@@ -327,8 +339,9 @@ def test_gate_refuses_flag_overridden_measured_score():
     reviewer = {"identity": "qc/f12", "session": "unit-test",
                 "authority": "manual Part F F12"}
     rec = to_motion_qc_record([pan_row], reviewer, "run-pan")
-    check("static MP4 / slide-transition fixture fails animation QA",
-          rec["verdict"] == "FAIL" and rec["reason_code"] == CLIP_LOW_MOTION,
+    check("static MP4 / slide-transition fixture is advised, not FAIL",
+          rec["verdict"] == "PASS"
+          and rec["reason_code"] == MOTION_FLAG_ADVISORY,
           json.dumps(rec)[:140])
     # Boundary is strict '<': exactly at the threshold is not near-still.
     edge = gate_clips([{"clip_id": "clip-edge",
@@ -340,13 +353,21 @@ def test_gate_refuses_flag_overridden_measured_score():
     ok = gate_clips([{"clip_id": "clip-move", "motion_score": moving}])
     check("genuine motion above threshold still passes", ok["outcome"] == "ok",
           json.dumps(ok)[:120])
-    # Contradictory row: high score but flagged:true keeps the stricter
-    # verdict — loosening a supplied flag would be a second fail-open.
+    # A supplied flagged:true still asks for a look (advice); it is refused
+    # only when that look confirms the take is frozen.
     contra = gate_clips([{"clip_id": "clip-contra",
                          "motion_score": {"score": 0.5, "flagged": True}}])
-    check("high score + flagged:true stays refused (stricter verdict wins)",
-          contra["outcome"] == "rejected"
-          and contra["flagged"] == ["clip-contra"], json.dumps(contra))
+    check("high score + flagged:true is advised",
+          contra["outcome"] == "ok"
+          and contra["kept_flagged"] == ["clip-contra"], json.dumps(contra))
+    contra_frozen = gate_clips(
+        [{"clip_id": "clip-contra",
+          "motion_score": {"score": 0.5, "flagged": True}}],
+        looks={"clip-contra": {"frozen": True}})
+    check("high score + flagged:true + frozen look is refused",
+          contra_frozen["outcome"] == "rejected"
+          and contra_frozen["refused"] == ["clip-contra"],
+          json.dumps(contra_frozen))
     # The other half must not regress: missing / malformed evidence refused.
     missing = gate_clips([{"clip_id": "clip-missing"}])
     check("missing evidence still listed unscored",

@@ -63,5 +63,62 @@
    "shape": "tiered_input",
    "aspect_ratio": true
   }
- ]
+ ],
+ "ultra": {
+  "_doc": "F-QM-4: the Ultra row is its own entry, not a numbered vendor option, so the four numbered rows and their answer-index mapping never move. Ultra renders 4K and is shown only when a live registry model advertises 4K pricing; otherwise ultra_model() returns ULTRA_MODEL_UNAVAILABLE and the card shows it as unavailable -- never a lower-resolution substitute.",
+  "name": "Ultra",
+  "resolution": "4K",
+  "unit": "clip",
+  "kie_model": "veo-3-1",
+  "kie_tier": "veo3_fast",
+  "rate_usd": 0.9,
+  "shot_s": 8,
+  "clip_s": [4, 6, 8],
+  "shape": "tiered_input",
+  "requires_pricing_marker": "4k"
+ },
+ "measured": {
+  "_doc": "N-55: measured prices recorded so a cost estimate refuses only a model that truly has no price (PRICE_MISSING). KIE credits; 1 credit = $0.005. source: KIE's own records for 119 tasks and the 2026-11-23 OmniHuman 2.0 test ledger, re-read 2026-11-23.",
+  "minimax-h3/image-to-video": {
+   "unit": "clip",
+   "credits_by_seconds": {
+    "4": 32,
+    "5": 40,
+    "6": 48,
+    "7": 56,
+    "8": 64
+   },
+   "source": "KIE records for 119 tasks, 2026-11-23"
+  },
+  "gpt-image-2-6/sunburst": {
+   "unit": "image",
+   "credits_low": 12.4,
+   "credits_high": 13.1,
+   "source": "KIE records for 119 tasks, 2026-11-23"
+  },
+  "minimax-h3/reference-to-video": {
+   "unit": "clip",
+   "credits_by_seconds": {
+    "4": 32,
+    "5": 56,
+    "6": 64,
+    "7": 72,
+    "8": 64
+   },
+   "source": "measured 2026-11-23"
+  },
+  "omnihuman-2-0": {
+   "unit": "rounded-second",
+   "credits_per_second": 14,
+   "source": "59 of 59 OmniHuman ledger rows across three runs, 2026-11-23"
+  },
+  "veo-3-1-4k": {
+   "unit": "clip",
+   "credits": {
+    "lite": 150,
+    "fast": 180
+   },
+   "source": "KIE veo-3-1 pricing text, read 2026-11-23"
+  }
+ }
 }

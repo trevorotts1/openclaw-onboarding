@@ -594,6 +594,130 @@ E4_GATE_STEPS = (
 )
 
 
+# --- Part F F-PIC-4: the chain check (end frame vs the next approved start) --
+#
+# Continuity constraints were planned (shot record field) and passed into the
+# prompt spec (``continuity``) but nothing ever compared a rendered clip's
+# end frame with the next shot's approved start frame. CHAIN_NOT_CONTINUOUS
+# is that refusal: on a chain, shot N's end frame must be shot N+1's start
+# frame. Frames arrive as fingerprints (sha256 of the decoded frame) so the
+# check is deterministic and needs no pixels here; a caller with perceptual
+# hashes may pass ``phash_distance`` > 0.
+CHAIN_NOT_CONTINUOUS = "CHAIN_NOT_CONTINUOUS"
+
+
+def check_chain_continuity(shots, phash_distance=0):
+    """Every rendered clip's end frame equals the next shot's approved start.
+
+    ``shots``: storyboard order, each a record with ``shot_id`` plus
+    ``start_frame`` (the approved start frame fingerprint) and ``end_frame``
+    (the rendered clip's end frame fingerprint). A shot with a missing
+    ``end_frame`` (not rendered yet) is skipped -- this gate runs on rendered
+    clips. Returns {"pass","reason_code","breaks","checked"}; each break names
+    both shots and why. Raises PlanError on a non-list.
+    """
+    if not isinstance(shots, list):
+        raise PlanError("SHOTS_INVALID", "shots must be a list")
+    if isinstance(phash_distance, bool) or not isinstance(phash_distance, int) \
+            or phash_distance < 0:
+        raise PlanError("FLOORS_INVALID", "phash_distance must be an int >= 0")
+    breaks, checked = [], 0
+    for a, b in zip(shots, shots[1:]):
+        end_a = a.get("end_frame") if isinstance(a, dict) else None
+        start_b = b.get("start_frame") if isinstance(b, dict) else None
+        if not (end_a and start_b):
+            continue
+        checked += 1
+        if str(end_a) != str(start_b):
+            breaks.append({
+                "shot_id": a.get("shot_id"),
+                "next_shot_id": b.get("shot_id"),
+                "reason": "%s ends on a frame that is not %s's approved start"
+                          % (a.get("shot_id"), b.get("shot_id"))})
+    ok = not breaks
+    return {"pass": ok,
+            "reason_code": "CHAIN_CONTINUOUS" if ok else CHAIN_NOT_CONTINUOUS,
+            "breaks": breaks, "checked": checked}
+
+
+def chain_final_checks(shots):
+    """Run the F-PIC-4 chain check as a gate step (same verdict shape as the
+    E4 final checks: outcome/reason_code/reasons/steps)."""
+    result = check_chain_continuity(shots)
+    reasons = ([{"step": "chain_continuity",
+                 "code": CHAIN_NOT_CONTINUOUS,
+                 "detail": br["reason"]} for br in result["breaks"]])
+    return {"outcome": "ok" if result["pass"] else "rejected",
+            "reason_code": result["reason_code"] if result["pass"]
+            else CHAIN_NOT_CONTINUOUS,
+            "reasons": reasons, "checked": result["checked"],
+            "steps": ["chain_continuity"]}
+
+
+# --- Part F F-EOC-4: place the end card so the last line fits (plan time) ---
+#
+# The check itself is correct and stays: assembler.check_last_line_before_endcard
+# and ending_qc.check_ending refuse LAST_LINE_OVER_ENDCARD as a hard rule. What
+# was missing is the PLANNER half: the writer that sets endcard_start_s must
+# put the card AFTER the final line end plus the card hold, inside the target
+# length -- or shorten earlier content at plan time. It never trims the sung
+# line to fit the card (that would be the very cutoff the rule forbids).
+CARD_HOLD_MIN_S = 4.0      # ending_qc.CARD_MIN_S
+CARD_HOLD_MAX_S = 5.0      # ending_qc.CARD_MAX_S
+
+
+def plan_endcard_start(last_line_end_s, target_length_s,
+                       card_hold_s=CARD_HOLD_MAX_S, tail_gap_s=0.3,
+                       end_early_s=2.0):
+    """The card start the timeline writer stores as ``endcard_start_s``.
+
+    The card opens ``tail_gap_s`` after the final word ends (ending_qc's
+    WORD_GAP_S=0.3, so the last word is never cut) and holds ``card_hold_s``
+    (4-5 s). The card must END at or before ``target_length_s - end_early_s``
+    (master_length's end-early rule). When the song leaves no room, the return
+    names the shortfall so the planner shortens EARLIER content at plan time;
+    the sung line is never trimmed.
+
+    Returns {"ok","endcard_start_s","endcard_end_s","last_line_end_s",
+    "card_hold_s","target_length_s","shortfall_s","reason_code","detail"}.
+    A card hold outside 4-5 s raises PlanError (the window ending_qc enforces),
+    so the two can never disagree.
+    """
+    for name, v in (("last_line_end_s", last_line_end_s),
+                    ("target_length_s", target_length_s)):
+        if not _is_num(v) or v < 0:
+            raise PlanError("BAD_INPUT", "%s must be a non-negative number" % name)
+    if not _is_num(card_hold_s) or not (
+            CARD_HOLD_MIN_S - 1e-9 <= card_hold_s <= CARD_HOLD_MAX_S + 1e-9):
+        raise PlanError("BAD_INPUT", "card_hold_s must be %.0f-%.0f s"
+                        % (CARD_HOLD_MIN_S, CARD_HOLD_MAX_S))
+    if not _is_num(tail_gap_s) or tail_gap_s < 0:
+        raise PlanError("BAD_INPUT", "tail_gap_s must be a non-negative number")
+    if not _is_num(end_early_s) or end_early_s < 0:
+        raise PlanError("BAD_INPUT", "end_early_s must be a non-negative number")
+    limit = target_length_s - end_early_s
+    start = last_line_end_s + tail_gap_s
+    end = start + card_hold_s
+    ok = end <= limit + 1e-9
+    return {"ok": ok,
+            "endcard_start_s": round(start, 3),
+            "endcard_end_s": round(end, 3),
+            "last_line_end_s": float(last_line_end_s),
+            "card_hold_s": float(card_hold_s),
+            "target_length_s": float(target_length_s),
+            "latest_end_s": round(limit, 3),
+            "shortfall_s": round(max(0.0, end - limit), 3),
+            "reason_code": "ENDCARD_PLACED" if ok else "LAST_LINE_OVER_ENDCARD",
+            "detail": ("card starts %.1f s after the final line and its %.1f s "
+                       "hold ends at %.1f s, inside the %.1f s target"
+                       % (tail_gap_s, card_hold_s, end, target_length_s)
+                       if ok else
+                       "the final line ends at %.1f s; the %.0f s card would "
+                       "end at %.1f s but the video ends at %.1f s -- shorten "
+                       "earlier content at plan time; never trim the sung line"
+                       % (last_line_end_s, card_hold_s, end, limit))}
+
+
 def e4_final_checks(timeline):
     """Run every Part E E4 QC step over a built timeline, in order.
 

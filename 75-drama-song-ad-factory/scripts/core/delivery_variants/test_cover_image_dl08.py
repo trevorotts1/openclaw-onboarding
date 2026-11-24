@@ -236,6 +236,19 @@ class CoverImage(unittest.TestCase):
             ci.title_of(str(self.run))
         self.assertEqual(cm.exception.code, ci.NO_TITLE)
 
+    def test_title_falls_back_to_a_run_manifest_record(self):
+        """F-EOC-3: a run record naming the title is used before refusing."""
+        (self.run / "creative" / "script.json").write_text(json.dumps({}))
+        brief = self.run / "brief.json"
+        if brief.exists():
+            brief.unlink()
+        (self.run / "control").mkdir(parents=True, exist_ok=True)
+        (self.run / "control" / "run-state.json").write_text(
+            json.dumps({"plan": {"song_title": "From the Run Record"}}))
+        self.assertEqual(ci.title_of(str(self.run)), "From the Run Record")
+        self.assertEqual(ci._title_and_source(str(self.run))[1],
+                         "control/run-state.json")
+
     def test_frame_selection_prefers_the_face_the_character_shows(self):
         shots, contracts, stills = ci.load_frames(str(self.run))
         picked = ci.select_frame(stills, shots, contracts)

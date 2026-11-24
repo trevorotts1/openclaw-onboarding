@@ -97,14 +97,15 @@ def video_seconds(card):
 def _lip_sync_line(length_s, shape_count):
     """lip_sync spec + (units, jobs): the card's lip-sync line (SPEC A9).
 
-    Seconds and clip count come from the one lip-sync rule
+    Seconds and piece count come from the one lip-sync rule
     (``lipsync_clips.budget``: 25-30% of the ad as the target, 35% as the hard
-    maximum, 4-6 s per clip and never fewer than 3 clips). The quoted seconds
-    are the largest WHOLE second that still fits inside the hard maximum, so
-    the card's own line is never a figure its own guard has to refuse;
-    ``_lip_sync_spec`` then enforces the roster and the 6 s cap. A duration
-    whose bounds collide is EXPOSED as ``LIPSYNC_DURATION_CONFLICT`` -- the
-    card goes "Price unavailable" rather than silently changing the policy.
+    maximum, 5 to 30 s per piece, and the floor of 3 pieces from 90 s up). The
+    quoted seconds are the largest WHOLE second that still fits inside the
+    hard maximum, so the card's own line is never a figure its own guard has
+    to refuse; ``_lip_sync_spec`` then enforces the lip-sync model and the
+    30 s top. A duration whose bounds collide is EXPOSED as
+    ``LIPSYNC_DURATION_CONFLICT`` -- the card goes "Price unavailable" rather
+    than silently changing the policy.
     """
     conflicts = lipsync_clips.duration_conflicts(length_s)
     if conflicts:

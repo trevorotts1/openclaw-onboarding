@@ -164,7 +164,8 @@ class Fake74:
                         "credits_consumed": self.credits})
         if sub == "save":
             path = os.path.join(CTX["tmp"], "proof-%d.out" % len(self.calls))
-            open(path, "w").close()
+            with open(path, "wb") as fh:     # kie_dispatch refuses a zero-byte save
+                fh.write(b"proof-run synthetic output")
             return (0, {"state": "success", "task_id": "t-x",
                         "saved_paths": [path],
                         "credits_consumed": self.credits})
@@ -302,18 +303,34 @@ def build_fixtures():
     clips = []
     for i in (1, 2, 3):
         p = os.path.join(tmp, "clip%02d.mp4" % i)
-        open(p, "w").close()
+        with open(p, "wb") as fh:
+            fh.write(("proof-run synthetic clip %d" % i).encode())
         clips.append(p)
+    # One lip-sync clip per line, cut ON THE BEAT (no crossfade): the H4 face
+    # gate reads a shot window from its offset, the provenance join reads it
+    # from offset - xfade, so a fade would make one shot carry two speakers'
+    # lines. Hard cuts keep both readings identical, one line per shot.
     CTX["timeline"] = {
         "schema_version": "blackceo.timeline/v1",
         "fps": 30, "width": 1920, "height": 1080,
         "song_path": None,
-        "transition": "fade", "transition_duration": 0.4,
+        "transition": "none", "transition_duration": 0.4,
         "timing": {"sections": [{"lyrics": [
-            {"line_id": "gift01", "start": 0.0, "end": 1.5},
-            {"line_id": "offer01", "start": 1.5, "end": 3.0},
-            {"line_id": "cta01", "start": 3.0, "end": 4.5},
+            {"line_id": "gift01", "start": 0.0, "end": 2.0},
+            {"line_id": "offer01", "start": 2.0, "end": 4.0},
+            {"line_id": "cta01", "start": 4.0, "end": 6.0},
         ]}]},
+        # H4/E6: the script lines on screen, with who speaks each one. The
+        # lip-sync gate needs speaker metadata; without it, missing evidence
+        # fails closed LIPSYNC_EVIDENCE_MISSING.
+        "lines": [
+            {"line_id": "gift01", "speaker": "lead",
+             "start_s": 0.0, "end_s": 2.0},
+            {"line_id": "offer01", "speaker": "lead",
+             "start_s": 2.0, "end_s": 4.0},
+            {"line_id": "cta01", "speaker": "lead",
+             "start_s": 4.0, "end_s": 6.0},
+        ],
         "segments": [   # motion_score: what the F12 scoring step writes per
                         # clip (score >= 0.02, flagged False); the assembler
                         # never scores video itself, so the fixture carries it.
@@ -322,12 +339,20 @@ def build_fixtures():
              "motion_score": {"score": 0.9, "flagged": False}},
             {"src": os.path.basename(clips[1]), "dur": 2.0,
              "lip_sync": True, "lip_sync_line_ids": ["offer01"],
+             "transition": "none", "beat_cut": True,
              "motion_score": {"score": 0.9, "flagged": False}},
             {"src": os.path.basename(clips[2]), "dur": 2.0,
              "lip_sync": True, "lip_sync_line_ids": ["cta01"],
+             "transition": "none", "beat_cut": True,
              "motion_score": {"score": 0.9, "flagged": False}},
         ],
     }
+    # H4/E6 provenance: an approved storyboard, per-clip artifacts and the
+    # kie_dispatch receipts that prove each lip-sync clip is this line's own
+    # take. check_plan() fails closed without them, so the fixture builds the
+    # same synthetic evidence the shared core's own test uses.
+    from test_lipsync_evidence import attach_evidence       # noqa: PLC0415
+    attach_evidence(CTX["timeline"], tmp, run_id=CTX["run_id_shadow"])
     CTX["timeline_path"] = os.path.join(tmp, "timeline.json")
     with open(CTX["timeline_path"], "w", encoding="utf-8") as fh:
         json.dump(CTX["timeline"], fh)
