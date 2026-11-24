@@ -481,8 +481,11 @@ length minus 2 s. Check: `scripts/core/ending_qc/` (`check_ending`).
 Every caption word must be a real word or a protected word (names, brands, the
 client's website). An unknown word fails with the word shown
 (`CAPTION_MISSPELLED`). When the ad sends people to a website, intake asks for
-the exact address; it is stored as a protected word and must appear verbatim in
-the lyrics, captions and end card (`WEBSITE_NOT_VERBATIM`).
+the exact address; it is stored as a protected word. In the lyrics and captions
+it may be SUNG in its spoken form ("dot org" for ".org"): a spoken "dot" is
+accepted between two address words, and nothing else is (`WEBSITE_NOT_VERBATIM`,
+`protected_names.check_website`). The printed end card must still carry the
+address itself, verbatim (F-EOC-6).
 
 ## H10 voice fits the character on screen (Part H)
 
