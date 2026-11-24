@@ -469,6 +469,14 @@ to self-approve a run.
   cap fails `TIMELINE_DUP_FRAMES` in `fps_conform.py`; (6) rows list the take
   kept, jobs used (n of 2), verdict and numbers, flag and strip path, and
   `lip_gate.qc_check` accepts `KEPT_BEST` and flagged rows that carry a strip path.
+- Lip-sync Emotion Hold (N-118, section 3G.6): every lip-sync take passed the
+  Emotion Hold check: no smile or teeth-grin held half a second or more under a
+  pain line, and the tagged feeling in at least half the frames on a joyful or
+  hopeful line. A drift is `EMOTION_DRIFT` - MAJOR at intensity 2 or 3, MEDIUM
+  at 1 - and records the second it starts. The code is
+  `scripts/core/face_emotion/face_emotion.qc_frame_gate`; the result carries
+  `findings[].drift_start_s`. `FACE_EMOTION_MISMATCH` is not the lip-sync check
+  and now only covers storyboard cards with no emotion tag.
 
 ## Clean ending (I5)
 
