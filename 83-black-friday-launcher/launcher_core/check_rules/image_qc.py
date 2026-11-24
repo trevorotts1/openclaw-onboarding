@@ -214,7 +214,7 @@ def violations(manifest: Dict[str, Any], root: Path, skill_root: Path) -> List[s
         return []
     # SWB-096: the owner's signed image-stage override is re-verified here (never believed from the manifest)
     # and waives ONLY the pages it names; a record that does not verify waives nothing and is itself a violation.
-    waived, override_fails, _banner = owner_override.image_stage_waiver(manifest, Path(root).name)
+    waived, override_fails, _banner = owner_override.image_stage_waiver(manifest, Path(root).name, root=Path(root))
     override_msgs = [f"{owner_override.CODE_IMAGE_STAGES}: the image-stage owner override does not verify: {why}"
                      for why in override_fails]
     waived_t = tuple(waived)

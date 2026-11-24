@@ -1798,7 +1798,8 @@ def assemble(run_dir: Path, intake: Dict[str, Any], route: Dict[str, Any],
                 owner_override_image_stages, approved, Path(run_dir).name, run_dir)
         except ValueError as exc:
             raise PackageError(owner_override_module.CODE_IMAGE_STAGES, str(exc))
-        unplanned = [r for r in image_override_entry["page_roles"] if r not in {p["role"] for p in ordered}]
+        planned = {p["role"] for p in ordered} | {n["role"] for n in route.get("nodes") or [] if isinstance(n, dict)}
+        unplanned = [r for r in image_override_entry["page_roles"] if r not in planned]
         if unplanned:
             raise PackageError(owner_override_module.CODE_IMAGE_STAGES,
                                f"the record names pages this package does not have: {unplanned}")

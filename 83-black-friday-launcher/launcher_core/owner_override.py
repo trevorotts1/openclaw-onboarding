@@ -223,8 +223,25 @@ def image_stages_banner(roles: List[str], record: Mapping[str, Any]) -> str:
             f"(signed record {str(record.get('signature'))[:16]})")
 
 
+def planned_roles(manifest: Mapping[str, Any], root: Optional[Path] = None) -> List[str]:
+    """Every page role this package plans: its pieces, the pages another skill installed, its route graph."""
+    roles = {str(p.get("role") or "") for p in manifest.get("pieces") or [] if isinstance(p, Mapping)}
+    binding = manifest.get("dispatch_binding")
+    for page in (binding.get("pages") if isinstance(binding, Mapping) else None) or []:
+        if isinstance(page, Mapping):
+            roles.add(str(page.get("page_slot") or ""))
+    if root is not None:
+        try:
+            graph = json.loads((Path(root) / "route-graph.json").read_text(encoding="utf-8"))
+            roles.update(str(n.get("role") or "") for n in graph.get("nodes") or [] if isinstance(n, Mapping))
+        except (OSError, ValueError, AttributeError, TypeError):
+            pass
+    roles.discard("")
+    return sorted(roles)
+
+
 def image_stage_waiver(manifest: Mapping[str, Any], package_id: str,
-                       run_dir: Optional[Path] = None) -> Tuple[List[str], List[str], str]:
+                       run_dir: Optional[Path] = None, root: Optional[Path] = None) -> Tuple[List[str], List[str], str]:
     """(waived roles, failures, banner) for a manifest's image-stage override, RE-VERIFIED here.
 
     A manifest with no record waives nothing and fails nothing. A record that does not verify waives
@@ -236,7 +253,7 @@ def image_stage_waiver(manifest: Mapping[str, Any], package_id: str,
     fails = verify_image_stages(record, manifest.get("approved_plan_hash") or "", package_id, run_dir)
     if fails:
         return [], fails, ""
-    planned = {str(p.get("role") or "") for p in manifest.get("pieces") or [] if isinstance(p, Mapping)}
+    planned = set(planned_roles(manifest, root))
     extra = [r for r in record["page_roles"] if r not in planned]
     if extra:
         return [], [f"the record names pages this package does not have: {extra}"], ""

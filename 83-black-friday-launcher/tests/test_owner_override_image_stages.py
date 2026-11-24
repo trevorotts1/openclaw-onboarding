@@ -193,6 +193,23 @@ class CheckRuleTests(Base):
         self.assertIn("does not verify", text)
         self.assertIn("upsell_1", text)
 
+    def test_an_external_install_package_plans_its_pages_without_launcher_pieces(self):
+        """Pages another skill installed carry no piece: the route graph and the install binding plan them."""
+        self.write_report(["landing", *ROLES])
+        manifest = self.manifest(self.record(), planned=("landing",))
+        # only landing is a piece: the three named pages are unknown to the package, so nothing is waived
+        self.assertTrue(owner_override.image_stage_waiver(manifest, PKG, root=self.root)[1])
+        (self.root / "route-graph.json").write_text(
+            json.dumps({"nodes": [{"role": r} for r in ("landing", "checkout", *ROLES)]}), encoding="utf-8")
+        self.assertEqual(owner_override.image_stage_waiver(manifest, PKG, root=self.root)[:2], (ROLES, []))
+        text = " ".join(self.stage_fails(manifest))
+        for role in ROLES:
+            self.assertNotIn(role, text)
+        self.assertIn("landing", text)
+        (self.root / "route-graph.json").unlink()
+        manifest["dispatch_binding"] = {"pages": [{"page_slot": r} for r in ROLES]}
+        self.assertEqual(owner_override.image_stage_waiver(manifest, PKG, root=self.root)[:2], (ROLES, []))
+
     def test_a_practice_package_is_not_waived(self):
         manifest = dict(self.manifest(self.record()), test_only=True)
         self.assertEqual(owner_override.image_stage_waiver(manifest, PKG), ([], [], ""))
