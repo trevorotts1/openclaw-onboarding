@@ -261,7 +261,7 @@ Run dir listing:
 
 ```json
 [
-  { "n": 1, "value": { "build": "openrouter/z-ai/glm-5.3-flash", "check": "sonnet-chain", "route": "openrouter" },
+  { "n": 1, "value": { "build": "openrouter/z-ai/glm-5.3-flash", "check": "cross-model", "route": "openrouter" },
     "text": "GLM 5.3 Flash (OpenRouter) builds, Claude Sonnet checks", "id": "models" },
   { "n": 1, "text": "60 seconds",       "value": null, "id": "length" },
   { "n": 1, "text": "Soul Ballad",      "value": null, "id": "music" },
