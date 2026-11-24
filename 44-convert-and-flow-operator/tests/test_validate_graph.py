@@ -413,3 +413,171 @@ def test_every_named_fixture_exists():
     missing = [name for name, _code, _verdict, _kind in GRAPH_CASES
                if not (FIXTURES / name).exists()]
     assert not missing, "graph fixture(s) named by the cases are missing: %s" % missing
+
+
+# ---- Go To nodes (SWB-089) -------------------------------------------------------------------
+# A saved Go To carries its jump only in attributes.targetNodeId (no `next`), exactly as the
+# published "00A - Promo Email Sequence - BFO" and the welcome workflow save it.
+
+def _welcome_shape(goto_attrs=None, goto_extra=None, drop_target_wait=False):
+    """The welcome workflow's shape: tag -> E1 -> if/else; the eligible arm is SMS -> Go To E2 wait;
+    the None arm goes straight to the E2 wait; E2 wait -> E2 email."""
+    attrs = {"type": "goto", "targetNodeId": "e2wait"} if goto_attrs is None else goto_attrs
+    goto = {"id": "goto", "parent": "sms", "parentKey": "sms", "order": 3,
+            "attributes": attrs, "name": "Go To", "type": "goto"}
+    goto.update(goto_extra or {})
+    nodes = [
+        {"id": "tag", "type": "add_contact_tag", "name": "tag", "parentKey": None, "next": "e1"},
+        {"id": "e1", "type": "email", "name": "E1", "parentKey": "tag", "next": "cond"},
+        {"id": "cond", "type": "if_else", "name": "yes", "parentKey": "e1",
+         "attributes": {"branches": [{"name": "Eligible for SMS"}]},
+         "next": ["armyes", "armnone"]},
+        {"id": "armyes", "type": "if_else", "name": "Eligible for SMS", "parent": "cond",
+         "parentKey": "cond", "next": "sms"},
+        {"id": "armnone", "type": "if_else", "name": "None", "parent": "cond",
+         "parentKey": "cond", "next": "e2wait"},
+        {"id": "sms", "type": "sms", "name": "SMS", "parent": "armyes", "parentKey": "armyes",
+         "next": "goto"},
+        goto,
+        {"id": "e2wait", "type": "wait", "name": "wait", "parent": "armnone",
+         "parentKey": "armnone", "next": "e2"},
+        {"id": "e2", "type": "email", "name": "E2", "parentKey": "e2wait", "next": None},
+    ]
+    if drop_target_wait:
+        nodes = [n for n in nodes if n["id"] not in ("e2wait", "e2")]
+        for n in nodes:
+            if n["id"] == "armnone":
+                n["next"] = None
+    return nodes
+
+
+def _graph_report(tmp_path, nodes):
+    export = tmp_path / "export.json"
+    export.write_text(json.dumps({"workflowData": {"templates": nodes}}))
+    result = subprocess.run(
+        [sys.executable, str(VALIDATOR), "graph", "--export", str(export)],
+        capture_output=True, text=True,
+    )
+    return result.returncode, json.loads(result.stdout)
+
+
+def test_goto_with_saved_target_is_verified(tmp_path):
+    code, report = _graph_report(tmp_path, _welcome_shape())
+    assert report["failures"] == []
+    assert report["unverified"] == []
+    assert report["verdict"] == "PASS"
+    assert code == 0
+
+
+def test_goto_target_is_a_real_edge(tmp_path):
+    # The Go To is the ONLY path to a node: if the target is read as an edge the node is reached.
+    nodes = _welcome_shape()
+    for n in nodes:
+        if n["id"] == "armnone":
+            n["next"] = None  # the E2 wait is now reachable only through the Go To
+    code, report = _graph_report(tmp_path, nodes)
+    assert report["verdict"] == "PASS", report
+    # Negative twin: take the Go To's target away and the same nodes become orphans.
+    nodes = _welcome_shape(goto_attrs={"type": "goto", "targetNodeId": "e2"})
+    for n in nodes:
+        if n["id"] == "armnone":
+            n["next"] = None
+    code, report = _graph_report(tmp_path, nodes)
+    assert report["verdict"] == "FAIL"
+    assert {f["node_id"] for f in report["failures"] if f["kind"] == "ORPHAN"} == {"e2wait"}
+
+
+def test_goto_dangling_target_fails(tmp_path):
+    code, report = _graph_report(
+        tmp_path, _welcome_shape(goto_attrs={"type": "goto", "targetNodeId": "nowhere"}))
+    assert code == 1 and report["verdict"] == "FAIL"
+    hits = [f for f in report["failures"] if f["kind"] == "DANGLING"]
+    assert len(hits) == 1
+    assert hits[0]["node_id"] == "goto" and hits[0]["target"] == "nowhere"
+    assert hits[0]["field"] == "attributes.targetNodeId"
+
+
+def test_goto_target_in_another_workflow_fails(tmp_path):
+    # A real step id of a DIFFERENT workflow (here the 00A sequence's) is not a step of this one.
+    other = "4636bf25-4ffd-43ec-b605-9e1cb0bd1174"
+    code, report = _graph_report(
+        tmp_path, _welcome_shape(goto_attrs={"type": "goto", "targetNodeId": other}))
+    assert code == 1 and report["verdict"] == "FAIL"
+    hit = [f for f in report["failures"] if f["kind"] == "DANGLING"][0]
+    assert hit["target"] == other and hit["reason"] == "goto_target_not_in_this_workflow"
+
+
+def test_goto_self_loop_fails(tmp_path):
+    code, report = _graph_report(
+        tmp_path, _welcome_shape(goto_attrs={"type": "goto", "targetNodeId": "goto"}))
+    assert code == 1 and report["verdict"] == "FAIL"
+    kinds = [f["kind"] for f in report["failures"]]
+    assert kinds.count("GOTO_SELF_LOOP") == 1
+    assert "GOTO_CYCLE" not in kinds
+
+
+def test_goto_back_into_its_own_path_is_a_cycle(tmp_path):
+    # SMS -> Go To -> the E1 email that leads back into the SMS: a loop through a jump.
+    code, report = _graph_report(
+        tmp_path, _welcome_shape(goto_attrs={"type": "goto", "targetNodeId": "e1"}))
+    assert code == 1 and report["verdict"] == "FAIL"
+    cycles = [f for f in report["failures"] if f["kind"] == "GOTO_CYCLE"]
+    assert len(cycles) == 1
+    assert cycles[0]["cycle"][0] == cycles[0]["cycle"][-1]
+    assert "goto" in cycles[0]["cycle"]
+
+
+@pytest.mark.parametrize("attrs", [
+    {"type": "goto"},
+    {"type": "goto", "targetNodeId": ""},
+    {"type": "goto", "targetNodeId": None},
+    {"type": "goto", "targetNodeId": ["e2wait"]},
+    {"type": "goto", "targetNodeId": 7},
+])
+def test_goto_missing_or_unreadable_target_fails(tmp_path, attrs):
+    code, report = _graph_report(tmp_path, _welcome_shape(goto_attrs=attrs))
+    assert code == 1 and report["verdict"] == "FAIL"
+    hits = [f for f in report["failures"] if f["kind"] == "GOTO_TARGET"]
+    assert len(hits) == 1 and hits[0]["node_id"] == "goto"
+    assert report["unverified"] == []
+
+
+def test_goto_without_any_attributes_fails_not_unverified(tmp_path):
+    nodes = _welcome_shape()
+    for n in nodes:
+        if n["id"] == "goto":
+            del n["attributes"]
+    code, report = _graph_report(tmp_path, nodes)
+    assert code == 1 and report["verdict"] == "FAIL"
+    assert [f["kind"] for f in report["failures"]].count("GOTO_TARGET") == 1
+
+
+def test_goto_jump_out_of_its_branch_is_not_cross_branch(tmp_path):
+    # The jump from the eligible arm to the other arm's wait is what a Go To is for.
+    _, report = _graph_report(tmp_path, _welcome_shape())
+    assert not [f for f in report["failures"] if f["kind"] == "CROSS_BRANCH"]
+
+
+def test_legacy_goto_wired_through_next_keeps_its_old_rules(tmp_path):
+    # A goto exported with next/branches (no attributes) is not a saved goto: unchanged behaviour.
+    nodes = [
+        {"id": "r", "type": "tag", "parentKey": None, "next": "g"},
+        {"id": "g", "type": "goto", "parentKey": "r", "branches": {"a": "x", "b": "y"}},
+        {"id": "x", "type": "end", "parentKey": "g", "next": None},
+        {"id": "y", "type": "end", "parentKey": "g", "next": None},
+    ]
+    code, report = _graph_report(tmp_path, nodes)
+    assert report["verdict"] == "PASS", report
+
+
+def test_real_00a_shaped_goto_passes(tmp_path):
+    # The shape the published 00A sequence carries: parentKey differs from parent; no `next`.
+    nodes = [
+        {"id": "t", "type": "tag", "parentKey": None, "next": "w"},
+        {"id": "w", "type": "wait", "parentKey": "t", "next": "g"},
+        {"id": "g", "type": "goto", "name": "Go To", "parent": "t", "parentKey": "w", "order": 3,
+         "attributes": {"targetNodeId": "z", "type": "goto"}},
+        {"id": "z", "type": "end", "parentKey": "t", "next": None},
+    ]
+    _, report = _graph_report(tmp_path, nodes)
+    assert report["verdict"] == "PASS", report

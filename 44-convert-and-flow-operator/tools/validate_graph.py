@@ -135,6 +135,27 @@ def is_native_graph(nodes):
     ) or bool(native_condition_ids(nodes))
 
 
+def goto_target(node):
+    """The saved target step id of a Go To node, or None.
+
+    GoHighLevel saves a Go To as {"type": "goto", "attributes": {"targetNodeId": <step id>,
+    "type": "goto"}} with no `next`: the jump target lives only in attributes.targetNodeId (the same
+    shape the 4 Go To nodes of the published "00A - Promo Email Sequence - BFO" carry)."""
+    value = _attrs(node).get("targetNodeId")
+    return value if isinstance(value, str) and value else None
+
+
+def is_saved_goto(node):
+    """A Go To whose jump is saved in attributes (or that exposes no legacy next/branches at all, so
+    there is nothing else it could be wired by). A legacy goto wired through next/branches keeps the
+    old rules unchanged."""
+    if node.get("type") != "goto":
+        return False
+    return "targetNodeId" in _attrs(node) or not (
+        strings(node.get("next")) or strings(node.get("branches"))
+    )
+
+
 def read_json(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -407,10 +428,43 @@ def graph(data, nodes, trigger):
         })
 
     exposes_branches = any("branches" in n for n in nodes)
+    goto_edges = set()
+    goto_bad = set()
     for n in nodes:
         targets = []
         targets.extend(strings(n.get("next")))
         targets.extend(strings(n.get("branches")))
+        if is_saved_goto(n):
+            node_id = n.get("id")
+            target = goto_target(n)
+            if target is None:
+                goto_bad.add(node_id)
+                failures.append({
+                    "kind": "GOTO_TARGET",
+                    "node_id": node_id,
+                    "name": n.get("name"),
+                    "reason": "goto_target_missing",
+                })
+            elif target == node_id:
+                goto_bad.add(node_id)
+                failures.append({
+                    "kind": "GOTO_SELF_LOOP",
+                    "node_id": node_id,
+                    "target": target,
+                    "reason": "goto_targets_itself",
+                })
+            elif target not in existing:
+                goto_bad.add(node_id)
+                failures.append({
+                    "kind": "DANGLING",
+                    "node_id": node_id,
+                    "field": "attributes.targetNodeId",
+                    "target": target,
+                    "reason": "goto_target_not_in_this_workflow",
+                })
+            else:
+                goto_edges.add((node_id, target))
+                targets.append(target)
         edges[n.get("id")] = list(dict.fromkeys(targets))
     edge_count = len({
         (source, target)
@@ -446,6 +500,8 @@ def graph(data, nodes, trigger):
         count = len(targets)
         if n.get("id") in arm_ids:
             continue  # an arm has one successor or none; it is not a condition
+        if is_saved_goto(n):
+            continue  # a Go To has exactly one successor, checked above against its saved target
         if n.get("type") in BRANCH_TYPES and count < 2:
             if not exposes_branches and not strings(n.get("next")):
                 unverified.append({
@@ -541,6 +597,8 @@ def graph(data, nodes, trigger):
                 and target in strings(n.get("branches"))
             ):
                 continue
+            if (source, target) in goto_edges:
+                continue  # a Go To is the sanctioned jump out of its own branch body
 
             from_set = memberships.get(source)
             to_set = memberships.get(target)
@@ -573,6 +631,18 @@ def graph(data, nodes, trigger):
                     continue
                 cycles.add(cycle)
                 cycle_nodes = cycle[:-1]
+                if any(
+                    (a, b) in goto_edges for a, b in zip(cycle, cycle[1:])
+                ):
+                    # A Go To never makes a legal loop: a jump back into its own path is a CYCLE. (A
+                    # one-node cycle is the self-loop already failed above.)
+                    if len(cycle_nodes) > 1:
+                        failures.append({
+                            "kind": "GOTO_CYCLE",
+                            "node_id": node_id,
+                            "cycle": list(cycle),
+                        })
+                    continue
                 legal_loop_nodes = {
                     cycle_id for cycle_id in cycle_nodes
                     if by_id[cycle_id].get("type") in LOOP_TYPES
@@ -625,7 +695,7 @@ def graph(data, nodes, trigger):
             ):
                 continue  # the last action of a saved canvas branch ends it
             if not successors:
-                if node_id not in unverified_ids:
+                if node_id not in unverified_ids and node_id not in goto_bad:
                     failures.append({
                         "kind": "UNTERMINATED",
                         "node_id": node_id,
