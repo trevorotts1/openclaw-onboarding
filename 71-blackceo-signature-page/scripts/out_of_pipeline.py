@@ -46,6 +46,12 @@ LEDGER_FILE = "private/quarantine-ledger.json"
 LEDGER_SCHEMA = "signature-launch-quarantine-ledger/v1"
 LEDGER_KIND = "quarantine_entry"
 GOVERNOR_FILE = "private/governor.json"
+ADMISSION_KIND = "admission_record"
+ACK_FILE = "private/input-acknowledgements.json"
+ACK_SCHEMA = "signature-launch-input-acknowledgements/v1"
+ACK_KIND = "input_acknowledgement"
+ACK_FIELDS = ("path", "old_sha256", "new_sha256", "reason", "approver", "acknowledged_at")
+EXECUTOR_RECORD = "stage-executor-record.json"
 ENTRY_FIELDS = ("path", "sha256", "size", "reason", "quarantined_at", "approver")
 
 # RUN-STATE FILES (1.3.45). Exact root-level names the pipeline rewrites on every
@@ -276,20 +282,75 @@ def _ledger_entry(root, rel):
     return next((e for e in ledger["entries"] if e.get("path") == rel), None)
 
 
-def quarantine_release(root, rel, stage):
-    """The admission row that lets stage `stage` register/close the quarantined `rel`, or None.
+# --------------------------------------------------------------------------
+# signed admission records (1.3.46)
+# --------------------------------------------------------------------------
+# Every decision the governor writes is signed with the operator key (HMAC-SHA256,
+# domain-separated, tagged 'admission_record'). A row that is unsigned, signed with
+# another key, or edited after signing is ignored by every consumer.
 
-    1.3.45 (d). A paid dispatch of stage S regenerates files inside S's own output
-    directories (and S's own `production-request-<stage>.json`); some of those exact
-    paths may sit in the quarantine ledger. The release is narrow on purpose:
-      * an ADMITTED `paid_dispatch` admission record for exactly this stage exists in
-        the run's governor file and names this exact path under
-        `out_of_pipeline.quarantined_to_supersede` with `owner_stage` == this stage;
-      * the record's quarantine ledger hash equals the ledger on disk now (a path
-        quarantined or re-signed after the admission is not covered by it);
-      * the row's sha256 equals the ledger entry's sha256 for the path.
-    A path outside the stage's own scope never appears in the record, so it stays
-    unregisterable. close() additionally requires NEW bytes (see close)."""
+def _canonical_json(value):
+    plain = json.loads(json.dumps(value, default=str))   # one spelling, as read back from disk
+    return json.dumps(plain, sort_keys=True, separators=(",", ":")).encode()
+
+
+def admission_signature(decision, key):
+    body = {k: v for k, v in decision.items() if k != "signature"}
+    return hmac.new(key, _canonical_json({"domain": ADMISSION_KIND, "record": body}),
+                    hashlib.sha256).hexdigest()
+
+
+def sign_admission(root, decision, *, key_file=None, now=None):
+    """Stamp `signed_at` and `signature` onto one governor decision. Returns True when
+    signed; False (row stays unsigned, and is never trusted) when no operator key is usable."""
+    try:
+        key = _key_bytes(root, key_file)
+    except OutOfPipeline:
+        return False
+    decision.pop("signature", None)
+    decision["signed_at"] = (now or datetime.now(timezone.utc)).isoformat()
+    decision["signature"] = admission_signature(decision, key)
+    return True
+
+
+def verify_admission(decision, key):
+    if key is None or not isinstance(decision, dict):
+        return False
+    sig = decision.get("signature")
+    return isinstance(sig, str) and isinstance(decision.get("signed_at"), str) \
+        and hmac.compare_digest(sig, admission_signature(decision, key))
+
+
+def _parse_time(text):
+    try:
+        value = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def quarantine_release(root, rel, stage, in_scope=None):
+    """The SIGNED admission row that lets stage `stage` register/close the quarantined `rel`,
+    or None.
+
+    1.3.46. The release is narrow on purpose; every condition must hold:
+      * `in_scope(rel, stage)` is true: the exact path is one stage `stage` itself writes
+        (the caller supplies the stage-scope rule; with none given nothing is released);
+      * the ledger entry for `rel` verifies against the operator key;
+      * an ADMITTED `paid_dispatch` record for exactly this stage exists in the governor
+        file, carries a valid operator-key signature (unsigned, forged or foreign-key rows
+        are ignored), and names this exact path under `quarantined_to_supersede` with
+        `owner_stage` == this stage, for which `in_scope(rel, owner_stage)` also holds;
+      * the record's quarantine ledger hash equals the ledger on disk now;
+      * the row's sha256 equals the ledger entry's sha256.
+    The row returned carries the record's `signed_at`. close() additionally requires
+    render-bound proof (see `render_binds`)."""
+    if in_scope is None or not in_scope(rel, str(stage)):
+        return None
+    try:
+        key = _key_bytes(root)
+    except OutOfPipeline:
+        return None
     try:
         record = json.loads((Path(root).resolve() / GOVERNOR_FILE).read_text(encoding="utf-8"))
         ledger_sha = _sha256_file(ledger_path(root))
@@ -298,10 +359,14 @@ def quarantine_release(root, rel, stage):
     led = _ledger_entry(root, rel)
     if led is None or not isinstance(record, dict):
         return None
+    sig = led.get("signature")
+    if not isinstance(sig, str) or not hmac.compare_digest(sig, _entry_signature(led, key)):
+        return None
     for decision in record.get("admitted") or ():
         if not isinstance(decision, dict) or decision.get("admitted") is not True \
                 or decision.get("authority") != "paid_dispatch" \
-                or decision.get("stage") != str(stage):
+                or decision.get("stage") != str(stage) \
+                or not verify_admission(decision, key):
             continue
         oop = decision.get("out_of_pipeline") or {}
         if oop.get("quarantine_ledger_sha256") != ledger_sha:
@@ -309,17 +374,120 @@ def quarantine_release(root, rel, stage):
         for row in oop.get("quarantined_to_supersede") or ():
             if isinstance(row, dict) and row.get("path") == rel \
                     and row.get("owner_stage") == str(stage) \
+                    and in_scope(rel, row.get("owner_stage")) \
                     and row.get("sha256") == led.get("sha256"):
-                return row
+                return dict(row, signed_at=decision["signed_at"])
     return None
 
 
-def register(root, path, *, stage, item=None, expected_sha256=None, producer=None):
+def render_binds(root, rel, digest, after):
+    """True when a stage executor record lists exactly `rel` with output sha256 `digest`
+    and was written after `after` (the signed admission's time).
+
+    The provenance the code already trusts for a rendered image is the executor's own
+    `<stage>/stage-executor-record.json` (stage_executor._stage_record_edit): each image/item
+    entry names `file` and the sha256 of the bytes it delivered. Old bytes, or old bytes plus
+    one byte, are in no executor entry, so they never bind."""
+    when = _parse_time(after)
+    if when is None:
+        return False
+    base = Path(root).resolve()
+    for record in sorted(base.glob("*/" + EXECUTOR_RECORD)):
+        if record.parent.name in INTERNAL_DIRS:
+            continue
+        try:
+            data = json.loads(record.read_text(encoding="utf-8"))
+            written = datetime.fromtimestamp(record.stat().st_mtime, timezone.utc)
+        except (OSError, ValueError):
+            continue
+        stamp = _parse_time(data.get("generated_at")) if isinstance(data, dict) else None
+        if not isinstance(data, dict) or stamp is None or stamp <= when or written <= when:
+            continue
+        for entry in (data.get("images") or []) + (data.get("items") or []):
+            if isinstance(entry, dict) and entry.get("file") == rel \
+                    and entry.get("sha256") == digest:
+                return True
+    return False
+
+
+# --------------------------------------------------------------------------
+# signed input acknowledgements (1.3.46)
+# --------------------------------------------------------------------------
+
+def ack_path(root):
+    return Path(root).resolve() / ACK_FILE
+
+
+def _ack_signature(entry, key):
+    body = {k: entry.get(k) for k in ACK_FIELDS}
+    body["kind"] = ACK_KIND
+    return hmac.new(key, json.dumps(body, sort_keys=True, separators=(",", ":")).encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def _read_acks(root):
+    try:
+        data = json.loads(ack_path(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entries = data.get("entries") if isinstance(data, dict) else None
+    return [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) else []
+
+
+def acknowledge_input(root, path, *, old_sha256, new_sha256, reason, approver,
+                      key_file=None, now=None):
+    """Sign an acknowledgement that the declared input `path` changed from old to new.
+    It is valid only while the file's sha256 equals `new_sha256` and the registry still
+    holds `old_sha256`. It never alters the registry or the file."""
+    base = Path(root).resolve()
+    rel = normalise(base, path)
+    old, new = _digest(old_sha256, "old sha256"), _digest(new_sha256, "new sha256")
+    for field, value in (("reason", reason), ("approver", approver)):
+        if not str(value or "").strip():
+            raise OutOfPipeline("an input acknowledgement needs a %s" % field)
+    target = base / rel
+    if not target.is_file():
+        raise OutOfPipeline("%s does not exist" % rel)
+    if _sha256_file(target) != new:
+        raise OutOfPipeline("%s does not hold the acknowledged new sha256 now" % rel)
+    if (load(base)["outputs"].get(rel) or {}).get("sha256") != old:
+        raise OutOfPipeline("%s is not registered with the acknowledged old sha256" % rel)
+    key = _key_bytes(base, key_file)
+    entry = {"path": rel, "old_sha256": old, "new_sha256": new,
+             "reason": str(reason).strip(), "approver": str(approver).strip(),
+             "acknowledged_at": (now or datetime.now(timezone.utc)).isoformat()}
+    entry["signature"] = _ack_signature(entry, key)
+    entries = [e for e in _read_acks(base)
+               if not (e.get("path") == rel and e.get("new_sha256") == new)] + [entry]
+    out = ack_path(base)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"schema": ACK_SCHEMA, "entries": entries},
+                              indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return entry
+
+
+def input_acknowledged(root, row):
+    """True when a valid signed acknowledgement covers this `input_changed` row (path, the
+    registered old hash, and the actual new hash that is on disk now)."""
+    try:
+        key = _key_bytes(root)
+    except OutOfPipeline:
+        return False
+    for entry in _read_acks(root):
+        sig = entry.get("signature")
+        if entry.get("path") == row.get("path") and entry.get("old_sha256") == row.get("registered") \
+                and entry.get("new_sha256") == row.get("actual") \
+                and isinstance(sig, str) and hmac.compare_digest(sig, _ack_signature(entry, key)):
+            return True
+    return False
+
+
+def register(root, path, *, stage, item=None, expected_sha256=None, producer=None, in_scope=None):
     """Register one output BEFORE the producer writes it (item 5)."""
     rel = normalise(root, path)
-    if is_quarantined_path(root, rel) and quarantine_release(root, rel, stage) is None:
+    if is_quarantined_path(root, rel) and quarantine_release(root, rel, stage, in_scope) is None:
         raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be registered "
-                            "(no paid-dispatch admission of stage %r names it as superseded)"
+                            "(no signed paid-dispatch admission of stage %r names it as superseded)"
                             % (rel, stage))
     if not str(stage or "").strip():
         raise OutOfPipeline("register() needs the canonical stage the output belongs to")
@@ -350,13 +518,14 @@ def register(root, path, *, stage, item=None, expected_sha256=None, producer=Non
     return registry["outputs"][rel]
 
 
-def close(root, path, *, stage, sha256=None):
+def close(root, path, *, stage, sha256=None, in_scope=None):
     """Mark one registered output emitted, binding the bytes that were written."""
     rel = normalise(root, path)
     quarantined = is_quarantined_path(root, rel)
-    if quarantined and quarantine_release(root, rel, stage) is None:
+    release = quarantine_release(root, rel, stage, in_scope) if quarantined else None
+    if quarantined and release is None:
         raise OutOfPipeline("%s is quarantined (out of the pipeline) and can never be closed "
-                            "(no paid-dispatch admission of stage %r names it as superseded)"
+                            "(no signed paid-dispatch admission of stage %r names it as superseded)"
                             % (rel, stage))
     registry = load(root)
     entry = registry["outputs"].get(rel)
@@ -373,8 +542,10 @@ def close(root, path, *, stage, sha256=None):
     else:
         digest = _digest(sha256, "sha256")
     if quarantined:
-        # A quarantined file is closed only for bytes the stage wrote AFTER the
-        # quarantine: the old quarantined bytes can never be laundered into governed state.
+        # A quarantined file is closed only over bytes the stage's own executor rendered
+        # AFTER the signed admission: its record must list this exact path with an output
+        # sha256 equal to the bytes on disk. A quarantined file with one byte changed is in
+        # no executor record, and a path with no executor record stays refused.
         led = _ledger_entry(root, rel)
         if not target.is_file() or _sha256_file(target) != digest:
             raise OutOfPipeline("quarantined path %s can only be closed over the bytes now on "
@@ -382,6 +553,10 @@ def close(root, path, *, stage, sha256=None):
         if digest == led.get("sha256"):
             raise OutOfPipeline("quarantined path %s still holds its quarantined bytes; the "
                                 "stage has not regenerated it" % rel)
+        if not render_binds(root, rel, digest, release["signed_at"]):
+            raise OutOfPipeline("quarantined path %s is in no executor record written after "
+                                "the signed admission with these exact bytes; it was not "
+                                "rendered by the stage" % rel)
     expected = entry.get("expected_sha256")
     if expected and expected != digest:
         raise OutOfPipeline("output %s emitted %s but was registered as %s"

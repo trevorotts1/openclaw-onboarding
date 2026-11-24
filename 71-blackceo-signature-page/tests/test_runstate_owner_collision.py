@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""SWB-220 (1.3.45): closed run-state list, receipt-derived owners, quarantine collision.
+"""SWB-220 (1.3.45) hardened by SWB-230 (1.3.46): closed run-state list, receipt-only owner
+derivation, signed + render-bound quarantine release, signed input acknowledgement.
 
-Each positive check FAILS on 1.3.44 and PASSES on 1.3.45; every rule has a negative twin.
+Each rule has a negative twin. Attack cases A1..A7 live in tests/test_swb230_attacks.py.
 Run: python3 tests/test_runstate_owner_collision.py
 """
 import hashlib
 import json
+import os
 import sys
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -15,7 +18,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "scripts"))
 
 import governed_runner  # noqa: E402
-from test_quarantine_supersede import Base  # noqa: E402
+from test_quarantine_supersede import OTHER_KEY, Base  # noqa: E402
 
 oop = governed_runner.detector()
 
@@ -36,6 +39,22 @@ class Helpers(Base):
         path.write_text(json.dumps({"stage": stage, "status": status,
                                     "artifact_hashes": {k: sha(v) for k, v in files.items()}}),
                         encoding="utf-8")
+
+    def render(self, rel, text, stage, *, when=None, record_hash=None):
+        """What the stage executor does: write the file and list it in
+        <stage>/stage-executor-record.json (file + output sha256 + generated_at)."""
+        when = when or datetime.now(timezone.utc) + timedelta(seconds=30)
+        path = self.write(rel, text)
+        rec = self.run_root / stage / "stage-executor-record.json"
+        rec.parent.mkdir(parents=True, exist_ok=True)
+        data = json.loads(rec.read_text()) if rec.is_file() else {"stage": stage, "images": []}
+        data["generated_at"] = when.isoformat()
+        data["images"] = [e for e in data["images"] if e.get("file") != rel] + [
+            {"file": rel, "sha256": record_hash or sha(text)}]
+        rec.write_text(json.dumps(data), encoding="utf-8")
+        stamp = when.timestamp()
+        os.utime(rec, (stamp, stamp))
+        return path
 
     def refused_reason(self, stage="desktop-wireframe"):
         with self.assertRaises(governed_runner.AdmissionRefused) as ctx:
@@ -134,16 +153,73 @@ class TestBrandInput(Helpers):
         (self.run_root / "launch.json").write_text(
             json.dumps({"brand_hash": sha(self.BRAND)}), encoding="utf-8")
 
-    def test_edited_declared_brand_is_recorded_with_stale_pins(self):
+    def edited(self):
         self.govern("Dr. Brand", "intake", self.BRAND)
         new = json.dumps({"brand_id": "b", "palette": {"x": 1}})
         self.write("Dr. Brand", new)
+        return new
+
+    def ack(self, new, old=None, key_file=None):
+        return governed_runner.acknowledge_input(
+            self.run_root, "Dr. Brand", old_sha256=old or sha(self.BRAND), new_sha256=sha(new),
+            reason="owner edited the brand profile", approver="Trevor", key_file=key_file)
+
+    def test_edited_declared_brand_refuses_a_paid_dispatch_without_an_acknowledgement(self):
+        self.edited()
+        self.assertIn("Dr. Brand", self.refused_reason())
+        self.assertTrue(self.dispatch(authority="local")["admitted"])   # recorded, not refused
+
+    def test_signed_acknowledgement_admits_and_records_stale_pins(self):
+        new = self.edited()
+        self.ack(new)
         decision = self.dispatch()
         row, = decision["out_of_pipeline"]["input_changed"]
         self.assertEqual((row["path"], row["old_sha256"], row["new_sha256"]),
                          ("Dr. Brand", sha(self.BRAND), sha(new)))
         self.assertEqual(row["stale_brand_pins"], {"launch.json": sha(self.BRAND)})
         self.assertEqual(decision["out_of_pipeline"]["content_mismatch"], [])
+
+    def test_acknowledgement_is_void_when_the_file_changes_again(self):
+        new = self.edited()
+        self.ack(new)
+        self.write("Dr. Brand", json.dumps({"brand_id": "b", "palette": {"x": 99}}))
+        self.assertIn("Dr. Brand", self.refused_reason())
+
+    def test_acknowledgement_for_a_different_hash_is_ignored(self):
+        new = self.edited()
+        self.ack(new)
+        path = self.run_root / "private" / "input-acknowledgements.json"
+        doc = json.loads(path.read_text())
+        doc["entries"][0]["new_sha256"] = sha("some other brand")
+        path.write_text(json.dumps(doc))
+        self.assertIn("Dr. Brand", self.refused_reason())
+
+    def test_unsigned_or_foreign_key_acknowledgement_is_ignored(self):
+        new = self.edited()
+        self.ack(new, key_file=self.make_key(OTHER_KEY, "other"))
+        self.assertIn("Dr. Brand", self.refused_reason())
+        path = self.run_root / "private" / "input-acknowledgements.json"
+        doc = json.loads(path.read_text())
+        doc["entries"][0].pop("signature")
+        path.write_text(json.dumps(doc))
+        self.assertIn("Dr. Brand", self.refused_reason())
+
+    def test_acknowledgement_cannot_be_made_for_a_wrong_old_or_new_hash(self):
+        new = self.edited()
+        with self.assertRaises(ValueError):
+            self.ack(new, old=sha("not the registered hash"))
+        with self.assertRaises(ValueError):
+            governed_runner.acknowledge_input(self.run_root, "Dr. Brand", old_sha256=sha(self.BRAND),
+                                              new_sha256=sha("not on disk"), reason="r", approver="T")
+
+    def test_acknowledge_input_command(self):
+        import quarantine_ledger
+        new = self.edited()
+        rc = quarantine_ledger.main(["acknowledge-input", "--run", str(self.run_root), "--path", "Dr. Brand",
+                                     "--old-sha256", sha(self.BRAND), "--new-sha256", sha(new),
+                                     "--reason", "r", "--approver", "T"])
+        self.assertEqual(rc, 0)
+        self.assertTrue(self.dispatch()["admitted"])
 
     def test_a_file_the_intake_does_not_name_refuses(self):
         self.govern("Other Brand", "intake", self.BRAND)
@@ -206,40 +282,38 @@ class TestOwnerDerivation(Helpers):
         self.stale_copy("review-pdfs/s03.png", "mobile three")
         self.assertIn("review-pdfs/s03.png", self.refused_reason())
 
-    def test_sidecar_takes_the_downstream_most_cited_stage(self):
+    def test_sidecar_citing_receipt_hashes_proves_nothing(self):
         board = json.dumps({"board": "b.png", "output_sha256": sha("board png"), "sections": [
             {"images": [{"sha256": sha("desk one")}, {"sha256": sha("mobile three")}]}]})
         self.stale_copy("review-pdfs/b.json", board)
         self.stale_copy("review-pdfs/b.png", "board png")
-        decision = self.dispatch("desktop-wireframe")
-        owners = {r["path"]: r["owner_stage"] for r in decision["out_of_pipeline"]["superseded_mismatch"]}
-        self.assertEqual(owners, {"review-pdfs/b.json": "mobile-tablet", "review-pdfs/b.png": "mobile-tablet"})
-        self.assertIn("review-pdfs/b.json", self.refused_reason("visual-mockup"))
+        reason = self.refused_reason()
+        self.assertIn("review-pdfs/b.json", reason)
+        self.assertIn("review-pdfs/b.png", reason)
 
-    def test_sidecar_citing_an_unknown_hash_refuses(self):
-        board = json.dumps({"board": "b.png", "sections": [
-            {"images": [{"sha256": sha("mobile three")}, {"sha256": sha("never receipted")}]}]})
-        self.stale_copy("review-pdfs/b.json", board)
-        self.assertIn("review-pdfs/b.json", self.refused_reason())
+    def test_path_listed_in_a_pass_receipt_takes_that_stage_as_owner(self):
+        self.receipt("mobile-tablet", dict(self.mob, **{"review-pdfs/b.json": "recorded board"}))
+        self.stale_copy("review-pdfs/b.json", "board edited since")
+        decision = self.dispatch("desktop-wireframe")
+        row, = decision["out_of_pipeline"]["superseded_mismatch"]
+        self.assertEqual(row["owner_stage"], "mobile-tablet")
+        self.assertIn("pass receipt", row["owner_basis"])
+        self.assertIn("review-pdfs/b.json", self.refused_reason("visual-mockup"))
 
     def test_sidecar_citing_nothing_refuses(self):
         self.stale_copy("review-pdfs/b.json", json.dumps({"board": "b.png"}))
         self.assertIn("review-pdfs/b.json", self.refused_reason())
 
-    def test_board_image_needs_a_sidecar_that_names_and_hashes_it(self):
-        board = json.dumps({"board": "b.png", "output_sha256": sha("board png"),
+    def test_board_image_with_a_sibling_claiming_its_hash_refuses(self):
+        board = json.dumps({"board": "b.png", "output_sha256": sha("tampered board png"),
                             "sections": [{"sha256": sha("mobile three")}]})
         self.stale_copy("review-pdfs/b.json", board)
-        self.stale_copy("review-pdfs/other.png", "a different image")
         self.stale_copy("review-pdfs/b.png", "tampered board png")
-        reason = self.refused_reason()
-        self.assertIn("review-pdfs/other.png", reason)
-        self.assertIn("review-pdfs/b.png", reason)
-        self.assertNotIn("review-pdfs/b.json,", reason)
+        self.assertIn("review-pdfs/b.png", self.refused_reason())
 
-    def test_upstream_cited_artifact_still_blocks_a_later_dispatch_but_not_its_own(self):
-        board = json.dumps({"sections": [{"sha256": sha("desk one")}]})
-        self.stale_copy("review-pdfs/d.json", board)
+    def test_upstream_receipt_path_still_blocks_a_later_dispatch_but_not_its_own(self):
+        self.receipt("desktop-wireframe", dict(self.desk, **{"review-pdfs/d.json": "recorded"}))
+        self.stale_copy("review-pdfs/d.json", "edited")
         self.assertTrue(self.dispatch("desktop-wireframe")["admitted"])
         self.assertIn("review-pdfs/d.json", self.refused_reason("mobile-tablet"))
 
@@ -263,11 +337,13 @@ class TestQuarantineCollision(Helpers):
             governed_runner.register_output(self.run_root, rel, stage="desktop-wireframe")
             with self.assertRaises(ValueError):          # still the quarantined bytes
                 governed_runner.close_output(self.run_root, rel, stage="desktop-wireframe")
-            self.write(rel, "regenerated by the stage")
+            self.render(rel, "regenerated by the stage", "desktop-wireframe")
             governed_runner.close_output(self.run_root, rel, stage="desktop-wireframe")
         result = governed_runner.scan(self.run_root)
         self.assertEqual({e["path"] for e in result["governed"]}, set(rows))
-        self.assertTrue(result["ok"])
+        self.assertEqual(result["content_mismatch"], [])
+        self.assertEqual({e["path"] for e in result["ungoverned"]},      # the executor's own record
+                         {"desktop-wireframe/stage-executor-record.json"})
 
     def test_registered_path_that_was_never_regenerated_cannot_be_closed_even_with_a_given_hash(self):
         self.quarantined("desktop-wireframe/a.json")
@@ -351,7 +427,7 @@ class TestQuarantineCollision(Helpers):
         self.quarantined("desktop-wireframe/a.json")
         self.dispatch("desktop-wireframe")
         governed_runner.register_output(self.run_root, "desktop-wireframe/a.json", stage="desktop-wireframe")
-        self.write("desktop-wireframe/a.json", "new bytes")
+        self.render("desktop-wireframe/a.json", "new bytes", "desktop-wireframe")
         governed_runner.close_output(self.run_root, "desktop-wireframe/a.json", stage="desktop-wireframe")
         with self.assertRaises(ValueError):              # now governed: cannot be re-quarantined
             governed_runner.quarantine(self.run_root, "desktop-wireframe/a.json", reason="hide", approver="T")

@@ -423,6 +423,10 @@ def _save_governor(run_dir, record):
 
 def _record_decision(run_dir, decision):
     record, path = _governor(run_dir)
+    # 1.3.46: every row the governor writes is signed with the operator key
+    # (SF_PIN_AUTHORITY_KEY_FILE), tagged 'admission_record'. Without a usable key the row
+    # stays unsigned, and no consumer trusts an unsigned row.
+    detector().sign_admission(run_dir, decision)
     bucket = "admitted" if decision.get("admitted") else "refused"
     record[bucket].append(decision)
     record["decision_count"] = len(record["admitted"]) + len(record["refused"])
@@ -549,8 +553,11 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
     }
     if superseded:
         decision["out_of_pipeline"]["superseded_mismatch"] = superseded
-    # 1.3.45 (c): run state and the declared brand input are RECORDED (old and new hash),
-    # never refused; the lists are closed (out_of_pipeline.RUN_STATE_FILES).
+    # 1.3.45 (c): run state is RECORDED (old and new hash), never refused; the list is closed
+    # (out_of_pipeline.RUN_STATE_FILES). 1.3.46: a changed declared input is recorded too, but
+    # an authoritative boundary refuses it unless a signed acknowledgement covers it (below).
+    unacknowledged_inputs = [e for e in scan_result.get("input_changed", ())
+                             if not detector().input_acknowledged(base, e)]
     for bucket in ("run_state_changed", "input_changed"):
         if scan_result.get(bucket):
             decision["out_of_pipeline"][bucket] = [
@@ -582,6 +589,16 @@ def admit(run_dir, *, kind, authority, owner="runner", stage=None, item=None,
             raise AdmissionRefused(decision["reason"], kind=kind, stage=stage,
                                    source="stage_gate", detail=[output.strip()[:2000]],
                                    decision=decision)
+
+    if authority in AUTHORITATIVE_AUTHORITIES and unacknowledged_inputs:
+        names = [e["path"] for e in unacknowledged_inputs]
+        decision["reason"] = ("a declared input changed after it was attested and no signed "
+                              "input acknowledgement covers it for %s: %s"
+                              % (authority, ", ".join(names)))
+        decision["source"] = "input_changed"
+        _record_decision(base, decision)
+        raise AdmissionRefused(decision["reason"], kind=kind, stage=stage,
+                               source="input_changed", detail=names, decision=decision)
 
     if authority in AUTHORITATIVE_AUTHORITIES and not effective_ok:
         names = [e["path"] for e in scan_result["ungoverned"] + blocking_mismatch]
@@ -679,17 +696,19 @@ def shared_output_dirs():
     return tuple(sorted(d for d, stages in seen.items() if len(stages) > 1))
 
 
-def _pass_receipt_hashes(base):
-    """{sha256: [(stage, artifact path), ...]} over the pass-stage receipts only."""
-    found = {}
+def _pass_receipts(base):
+    """[(stage, {artifact path: sha256})] over the pass-stage receipts only. Everything
+    ownership may be derived from lives here: the receipt itself, never the file under test."""
+    found = []
     for stage in canonical_order():
         doc = _read_json(Path(base) / "private" / "receipts" / ("%s.json" % stage))
         if not isinstance(doc, dict) or doc.get("status") != "pass":
             continue
+        listed = {}
         for artifact, value in (doc.get("artifact_hashes") or {}).items():
             digest = value.get("sha256") if isinstance(value, dict) else value
-            if isinstance(digest, str) and len(digest) == 64:
-                found.setdefault(digest, []).append((stage, artifact))
+            listed[str(artifact)] = digest if isinstance(digest, str) and len(digest) == 64 else None
+        found.append((stage, listed))
     return found
 
 
@@ -698,60 +717,30 @@ def _downstream_most(stages):
     return max(stages, key=order.index)
 
 
-def _cited_hashes(doc, out):
-    if isinstance(doc, dict):
-        for key, value in doc.items():
-            if key in ("sha256", "pdf_sha256") and isinstance(value, str):
-                out.append(value)
-            _cited_hashes(value, out)
-    elif isinstance(doc, list):
-        for value in doc:
-            _cited_hashes(value, out)
-    return out
-
-
-def _sidecar_owner(path, receipt_hashes):
-    """Owner of a JSON review sidecar: every sha256 it cites must be a pass-stage receipt
-    hash; the owner is the downstream-most stage among them. None when any is unknown."""
-    try:
-        doc = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    cited = _cited_hashes(doc, [])
-    if not cited or any(h not in receipt_hashes for h in cited):
-        return None
-    stages = [stage for h in cited for stage, _a in receipt_hashes[h]]
-    return _downstream_most(stages), "sidecar cites %d pass-receipt artifact hash(es)" % len(cited)
-
-
 def derive_owner(run_dir, rel, actual_sha256):
-    """(owner_stage, basis) for a file in a SHARED output directory, derived from the
-    pass-stage receipts, else None. Never from the path alone:
+    """(owner_stage, basis) for a file in a SHARED output directory, derived ONLY from what
+    a pass-stage receipt itself lists, else None. Never from the path alone, never from any
+    field inside the file under verification, never from a sibling file's claimed hash:
 
-      1. the file's bytes equal a hash a pass-stage receipt records (a copy of that
-         stage's own closed output): owner is the downstream-most such stage;
-      2. a JSON sidecar (board record, PDF manifest) whose every cited sha256 is a
-         pass-stage receipt hash: owner is the downstream-most cited stage;
-      3. a board image whose sibling JSON names it (`board` basename) and whose
-         `output_sha256` equals these bytes, with that JSON derivable by rule 2.
-    """
+      1. the exact path is a key of a pass-stage receipt's `artifact_hashes`: the receipt
+         says that stage wrote this path (owner: the downstream-most such stage);
+      2. the file's bytes equal an exact file hash a pass-stage receipt lists (a copy of
+         that stage's own closed output): owner is the downstream-most such stage.
+    A board image follows the same two rules on its own bytes and its own path. A JSON
+    sidecar that cites receipt hashes is NOT evidence (it is file content). 1.3.46 removed
+    the 1.3.45 sidecar and board-sibling rules after SWB-220's attack run (A6, A6b)."""
     base = Path(run_dir).resolve()
     if not any(rel.startswith(d) for d in shared_output_dirs()):
         return None
-    hashes = _pass_receipt_hashes(base)
-    if actual_sha256 in hashes:
-        stage = _downstream_most([st for st, _a in hashes[actual_sha256]])
-        return stage, "bytes equal the pass-stage receipt hash of %s" % hashes[actual_sha256][0][1]
-    if rel.endswith(".json"):
-        return _sidecar_owner(base / rel, hashes)
-    folder = (base / rel).parent
-    for sibling in sorted(folder.glob("*.json")):
-        doc = _read_json(sibling)
-        if isinstance(doc, dict) and doc.get("board") == Path(rel).name \
-                and doc.get("output_sha256") == actual_sha256:
-            owner = _sidecar_owner(sibling, hashes)
-            if owner:
-                return owner[0], "board image of %s; %s" % (sibling.name, owner[1])
+    receipts = _pass_receipts(base)
+    by_path = [st for st, listed in receipts if rel in listed]
+    if by_path:
+        return _downstream_most(by_path), "path is listed in the pass receipt of %s" % by_path[0]
+    by_hash = [(st, a) for st, listed in receipts for a, d in listed.items()
+               if d and d == actual_sha256]
+    if by_hash:
+        return (_downstream_most([st for st, _a in by_hash]),
+                "bytes equal the pass-stage receipt hash of %s" % by_hash[0][1])
     return None
 
 
@@ -809,11 +798,22 @@ def quarantine(run_dir, path, *, reason, approver, key_file=None):
 def register_output(run_dir, path, *, stage, item=None, expected_sha256=None,
                     producer=None):
     return detector().register(run_dir, path, stage=stage, item=item,
-                               expected_sha256=expected_sha256, producer=producer)
+                               expected_sha256=expected_sha256, producer=producer,
+                               in_scope=in_stage_scope)
 
 
 def close_output(run_dir, path, *, stage, sha256=None):
-    return detector().close(run_dir, path, stage=stage, sha256=sha256)
+    return detector().close(run_dir, path, stage=stage, sha256=sha256,
+                            in_scope=in_stage_scope)
+
+
+def acknowledge_input(run_dir, path, *, old_sha256, new_sha256, reason, approver, key_file=None):
+    """Sign an acknowledgement that a declared input (the brand profile named by intake.json
+    brand_file) changed after it was attested. Valid only while the file's sha256 equals
+    `new_sha256`. A paid dispatch with a changed input and no such record is refused."""
+    return detector().acknowledge_input(run_dir, path, old_sha256=old_sha256,
+                                        new_sha256=new_sha256, reason=reason,
+                                        approver=approver, key_file=key_file)
 
 
 def _declared_input_paths(run_dir):
