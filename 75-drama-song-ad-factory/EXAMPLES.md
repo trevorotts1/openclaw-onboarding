@@ -387,10 +387,13 @@ What is measured, and when
 
 The non-30 timeline escape
 `fps_set_by_choice_card` is the only path to a timeline rate other than the
-clips' native rate. It is allowed only when the choice card sets the rate AND a
-deliberate playback requirement names it; it is never used to hide duplicate
-frames. When it is set, every clip is still measured at its own native rate
-first, and the master is still checked against `TIMELINE_DUP_FRAMES`.
+master's native rate, and it passes only when all three hold: the run owner
+recorded the rate on the choice card; every clip's native rate equals the
+chosen rate or is matched by plain frame repeat or drop; and every clip's
+mpdecimate duplicate ratio was measured and is under the cap before assembly.
+A timeline that fails any of the three is refused (`TIMELINE_FPS_NOT_30` or
+`TIMELINE_DUP_FRAMES`). It is never used to hide duplicate frames. Every clip
+is still measured at its own native rate first.
 
 A segment report line
 For each clip the segment report records: shot id, native rate, measured
