@@ -1912,7 +1912,12 @@ def run_identity(run_dir: Path) -> str:
 def plan_revision(run_dir: Path, request: dict) -> str:
     """A digest of the plan's own decisions: the request minus executor-private keys, plus
     the copy source and the slot inventory the prompts are read from. A dependency that
-    changed (copy, slots, request) changes this and invalidates every earlier output."""
+    changed (copy, slots, request) changes this and invalidates every earlier output.
+
+    This is the WHOLE-PLAN digest: the board, an inventory item and any other job that is not
+    one section of a stage keeps it. The per-section slices of a stage (run_stage) use
+    section_revision() instead, so changing one section's design text never changes another
+    section's request key (SWB-550)."""
     public = {k: v for k, v in (request or {}).items() if not str(k).startswith("_")}
     h = hashlib.sha256(json.dumps(public, sort_keys=True, default=str).encode("utf-8"))
     for rel in ("copy/copy-manifest.json", "desktop-wireframe/image-inventory.json"):
@@ -1921,6 +1926,72 @@ def plan_revision(run_dir: Path, request: dict) -> str:
             h.update(rel.encode("utf-8"))
             h.update(sha256(path).encode("utf-8"))
     return h.hexdigest()
+
+
+# SWB-550: the request fields every section shares. A change to any of these changes every
+# section's key; nothing else about another section can.
+SECTION_SHARED_PRIVATE = ("_brand_block", "_hypersat", "_composition_brand")  # the client's brand
+SECTION_SHARED_METADATA = ("stage", "copy_version", "page_role", "page_kind", "section_count",
+                           "canonical_ids", "type_specs_source", "slot_labels_source")
+
+
+def _canon(value) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _own_rows(rows, section_id: str, field: str = "section_id") -> list:
+    return [r for r in (rows or []) if isinstance(r, dict) and str(r.get(field)) == section_id]
+
+
+def _section_sources(run_dir: Path, section_id: str) -> dict:
+    """This section's own rows of the copy manifest and of the closed image inventory. A file
+    that is not in the expected shape is hashed whole (never silently ignored)."""
+    out = {}
+    manifest = read_json_file(Path(run_dir) / "copy" / "copy-manifest.json")
+    if isinstance(manifest, dict) and isinstance(manifest.get("sections"), list):
+        shared = {k: v for k, v in manifest.items() if k not in ("sections", "ctas")}
+        out["copy_manifest"] = {
+            "shared": shared,
+            "section": [r for r in manifest["sections"]
+                        if isinstance(r, dict) and str(r.get("id", r.get("section_id"))) == section_id],
+            "ctas": _own_rows(manifest.get("ctas"), section_id, "section"),
+        }
+    elif (Path(run_dir) / "copy" / "copy-manifest.json").is_file():
+        out["copy_manifest"] = sha256(Path(run_dir) / "copy" / "copy-manifest.json")
+    inventory = read_json_file(Path(run_dir) / "desktop-wireframe" / "image-inventory.json")
+    if isinstance(inventory, dict) and isinstance(inventory.get("images"), list):
+        out["image_inventory"] = {
+            "shared": {k: v for k, v in inventory.items() if k != "images"},
+            "images": _own_rows(inventory["images"], section_id)}
+    elif (Path(run_dir) / "desktop-wireframe" / "image-inventory.json").is_file():
+        out["image_inventory"] = sha256(Path(run_dir) / "desktop-wireframe" / "image-inventory.json")
+    return out
+
+
+def section_revision(run_dir: Path, request: dict, section: dict, index: int) -> str:
+    """SWB-550: the digest of ONE section's request inputs: that section's own entry (copy, slots,
+    layout with its appended override text, type specs), its own layout-override row, its own
+    copy-manifest and image-inventory rows, plus what every section shares (the shared design
+    prose and stage template, the brand, the model, the style, the spec version, the section
+    order). Changing section 3's override text changes only section 3's revision; changing the
+    shared prose, the brand or the spec version changes every section's."""
+    request = request or {}
+    section_id = str((section or {}).get("section_id"))
+    sections = request.get("sections") or []
+    shared = {k: v for k, v in request.items()
+              if not str(k).startswith("_") and k not in ("sections", "layout_overrides", "metadata")}
+    shared.update({k: request[k] for k in SECTION_SHARED_PRIVATE if k in request})
+    meta = request.get("metadata") if isinstance(request.get("metadata"), dict) else {}
+    shared["metadata"] = {k: meta[k] for k in SECTION_SHARED_METADATA if k in meta}
+    shared["section_order"] = [str((s or {}).get("section_id")) for s in sections]
+    block = request.get("layout_overrides") if isinstance(request.get("layout_overrides"), dict) else None
+    own_override = _own_rows(block.get("applied"), section_id) if block else []
+    step = request.get("_step_band")
+    own_step = step if isinstance(step, dict) and str(step.get("section_id")) == section_id else None
+    payload = {"scheme": "section-v1", "shared": shared, "index": int(index), "section": section,
+               "override": own_override, "override_stage": block.get("stage") if block else None,
+               "step_band": own_step, "sources": _section_sources(run_dir, section_id)}
+    return hashlib.sha256(_canon(payload).encode("utf-8")).hexdigest()
 
 
 def page_instance(run_dir: Path, request: dict) -> str:
@@ -1934,11 +2005,14 @@ def page_instance(run_dir: Path, request: dict) -> str:
 
 
 def base_identity(run_dir: Path, request: dict, *, stage: str, slot: str,
-                  viewport: str) -> dict:
-    """The six identity fields that are known before an attempt is allocated."""
+                  viewport: str, section: dict | None = None, index: int | None = None) -> dict:
+    """The six identity fields that are known before an attempt is allocated. Given a stage's
+    `section` (and its 1-based `index`) the revision covers only that section's inputs
+    (SWB-550); without one it is the whole-plan revision."""
     return {
         "run": run_identity(run_dir),
-        "plan_revision": plan_revision(run_dir, request),
+        "plan_revision": (section_revision(run_dir, request, section, index or 0)
+                          if section is not None else plan_revision(run_dir, request)),
         "page_instance": page_instance(run_dir, request),
         "viewport": str(viewport),
         "stage": str(stage),
@@ -2073,6 +2147,37 @@ def reusable_record(run_dir: Path, ident: dict, out: Path) -> dict | None:
             continue
         if best is None or int(got.get("attempt") or 0) > int((best.get("identity") or {}).get("attempt") or 0):
             best = rec
+    return best
+
+
+def adopt_prewired_attempt(run_dir: Path, ident: dict, out: Path, prompt: str) -> dict | None:
+    """SWB-550 one-time bridge. Attempts settled before per-section request keys sit under a
+    whole-plan key. Such an attempt is resumed (no paid call) only when ALL of these hold: the
+    same run, page, viewport, stage and slot; its recorded prompt hash is exactly the hash of the
+    prompt about to be sent; and the delivered file is still the very bytes it recorded. Nothing
+    is copied or rewritten; any doubt returns None and the section is generated as usual."""
+    want = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    prefix = f"{ident.get('stage')}-{re.sub(r'[^A-Za-z0-9._-]+', '-', str(ident.get('slot'))).strip('-')[:32]}-{ident.get('viewport')}-"
+    jobs = Path(run_dir) / IMAGE_JOBS
+    if not jobs.is_dir() or not Path(out).is_file():
+        return None
+    best = None
+    for target in sorted(jobs.glob(prefix + "*")):
+        for path in sorted(target.glob("attempt-*.json")):
+            rec = read_json_file(path)
+            got = rec.get("identity") or {}
+            if rec.get("state") not in (None, "settled") or rec.get("historical") or rec.get("quarantined"):
+                continue
+            if rec.get("prompt_sha256") != want:
+                continue
+            if any(got.get(f) != ident.get(f) for f in ("run", "page_instance", "viewport", "stage", "slot")):
+                continue
+            if not rec.get("file") or rec.get("sha256") != sha256(Path(out)):
+                continue
+            if Path(run_dir) / rec["file"] != Path(out):
+                continue
+            if best is None or int(got.get("attempt") or 0) >= int((best.get("identity") or {}).get("attempt") or 0):
+                best = rec
     return best
 
 
@@ -2705,9 +2810,11 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
             if provider.name == "kie":
                 require_brand_line(stage, prompt)
             base = base_identity(run_dir, request, stage=stage, slot=slot,
-                                 viewport=f"{width}x{height}")
+                                 viewport=f"{width}x{height}", section=section, index=index)
             if not overwrite:
                 existing = reusable_record(run_dir, base, out)
+                if existing is None:  # SWB-550: an attempt made before per-section keys, same prompt, same bytes
+                    existing = adopt_prewired_attempt(run_dir, base, out, prompt)
                 if existing is not None:
                     entry = dict(existing, reused=True, provider=provider.name, mode=provider.mode)
                     records.append(entry)
