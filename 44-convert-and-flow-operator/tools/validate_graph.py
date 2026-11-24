@@ -23,7 +23,14 @@ import sys
 BRANCH_TYPES = {"if_else", "workflow_split", "goto", "transition"}
 TERMINAL_TYPES = {"end", "workflow_goal", "goal", "exit"}
 LOOP_TYPES = {"drip", "workflow_goal", "goto", "transition"}
-KINDS = ("tags", "custom_fields", "custom_values", "calendars", "pipelines")
+# GoHighLevel's built-in contact merge fields ({{contact.first_name}} ...): every contact has them, so
+# they are never a dependency that has to be created. Any other {{contact.x}} is still a custom field.
+STANDARD_CONTACT_FIELDS = frozenset({
+    "first_name", "last_name", "name", "full_name", "email", "phone", "company_name", "business_name",
+    "address1", "city", "state", "country", "postal_code", "website", "timezone", "date_of_birth",
+    "source", "id", "tags", "full_address",
+})
+KINDS = ("tags","custom_fields", "custom_values", "calendars", "pipelines")
 
 
 def _trigger_wired(contract):
@@ -216,6 +223,8 @@ def dependencies(data):
         for value in item.values():
             if isinstance(value, str):
                 for name in merge_tags(value, "contact."):
+                    if name.split("|")[0].strip().lower() in STANDARD_CONTACT_FIELDS:
+                        continue  # a built-in contact merge field is not a custom field
                     add("custom_fields", name)
                 for prefix in ("custom_values.", "customValue."):
                     for name in merge_tags(value, prefix):

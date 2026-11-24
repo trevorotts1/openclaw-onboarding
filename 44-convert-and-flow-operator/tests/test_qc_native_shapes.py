@@ -221,3 +221,26 @@ def test_deps_gate_still_fails_for_a_tag_the_location_lacks(tmp_path):
                            "--export", str(export_file), "--deps", str(manifest)],
                           capture_output=True, text=True, timeout=60)
     assert json.loads(proc.stdout)["verdict"] == "PASS"
+
+
+def _deps(tmp_path, subject):
+    export_file = tmp_path / "e2.json"
+    export_file.write_text(json.dumps({"workflowData": {"templates": [
+        {"id": "e", "type": "email", "attributes": {"subject": subject}}]}}))
+    manifest = tmp_path / "m2.json"
+    manifest.write_text(json.dumps({"custom_fields": ["favorite_color"]}))
+    proc = subprocess.run([sys.executable, "-I", str(TOOLS / "validate_graph.py"), "deps",
+                           "--export", str(export_file), "--deps", str(manifest)],
+                          capture_output=True, text=True, timeout=60)
+    return json.loads(proc.stdout)
+
+
+def test_built_in_contact_merge_fields_are_not_custom_field_dependencies(tmp_path):
+    report = _deps(tmp_path, "{{contact.first_name}} {{ contact.email }} {{contact.favorite_color}}")
+    assert report["verdict"] == "PASS" and report["missing"] == []
+
+
+def test_an_unlisted_custom_contact_field_still_fails(tmp_path):
+    report = _deps(tmp_path, "{{contact.first_name}} {{contact.ghost_field}}")
+    assert report["verdict"] == "FAIL"
+    assert {"kind": "custom_fields", "name": "ghost_field"} in report["missing"]

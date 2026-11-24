@@ -1,3 +1,8 @@
+## [v2.1.56] - 2026-11-23 - WF-18 no longer counts built-in contact merge fields as custom fields (SWB-062)
+
+- `tools/validate_graph.py` `deps`: `{{contact.first_name}}` and the other built-in contact merge fields (`STANDARD_CONTACT_FIELDS`: first_name, last_name, name, email, phone, company_name, address1, city, state, country, postal_code, website, timezone, date_of_birth, source, ...) every contact has were read as custom fields, so WF-18 failed `custom_fields:first_name` on a correct workflow. Any other `{{contact.x}}` is still a custom field and still fails when the manifest lacks it.
+- Tests: two new cases in `tests/test_qc_native_shapes.py` (one fails before, both pass after; the negative twin keeps an unlisted custom field failing).
+
 ## [v2.1.55] - 2026-11-23 - the independent QC tool reads GoHighLevel's real saved shapes (SWB-062)
 
 - `tools/validate_graph.py` (WF-23, WF-15): a saved canvas if/else is a condition node (`attributes.branches` list, `next` listing its child arms) plus one child arm per branch and a None arm, not a 2-entry top-level `branches` map. A native condition is MALFORMED_BRANCH unless `next` lists two or more distinct existing arms whose `parent` is that node; an arm is not a condition (no UNWIRED_BRANCH) and an empty arm is a branch end; in a saved canvas export (nodes carry `advanceCanvasMeta`) the last action of a chain ends it. A trailing wait or condition, a dangling or foreign arm, a one-arm condition, and any leaf of a plain (non-canvas) export are still UNTERMINATED / MALFORMED_BRANCH / DANGLING / UNWIRED_BRANCH. The legacy `branches` map is unchanged. `deps` also reads saved tag conditions (`conditionSubType: tags`).
