@@ -336,6 +336,19 @@ refusal run searched the argparse block and found `expects` false. A failed
 gate is repaired, or the item is refused; a waiver that would carry it past a
 check is never available, and no run folder or receipt can supply one.
 
+**The no-lip-sync route is a recorded opt-out, not a silent mode (F-ASM-2).**
+The free route exists only when the run owner chooses it, and the choice is a
+literal record the assembler reads: the timeline carries the value
+`no_lipsync`, and `control/method.json` states who chose it and at what time
+(the owner and the timestamp). A timeline that claims `no_lipsync` without that
+record, or with a record that is unreadable or missing its who or its at, is
+refused `LIPSYNC_OPT_OUT_MISSING` (`lipsync_clips.py`); the paid route keeps
+the value `lipsync`. On this route no lip-sync clip exists by design, so
+`FACE_SPEAKS_NO_LIPSYNC` is not raised for a speaking face, while any lip-sync
+clip that does exist must still match its on-screen speaker
+(`LIPSYNC_WRONG_FACE`). The route is never a default, never inferred, and never
+used to skip the lip-sync checks on a run that bought lip-sync jobs.
+
 Build hygiene never reaches the client: drift reports are operator-only and
 silent during a client run. Drift between the installed tree and its source
 (missing files, differing files, a stale distribution, a sync that would
