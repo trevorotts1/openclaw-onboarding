@@ -1,7 +1,7 @@
 ---
 name: blackceo-signature-page
 description: Build, revise, QC, and hand off BlackCEO Signature funnel pages end to end, including Standard or Long-Form copy, font/action planning, desktop/mobile wireframes, visual-direction mockups, image intelligence and prompts, generated-image QC, image maps, responsive HTML, GHL installation/testing, and authorized publishing. Use when a user asks for a BlackCEO Signature landing, signature sales page, opt-in, registration, challenge, booking, squeeze, webinar/event, or comparable focused-conversion page, or asks to apply the BlackCEO page, image, Secret Super Sauce, or visual-direction system. The signature sales page and the signature landing (opt-in) page are the two page kinds of this skill's landing role (`--page-kind sales|opt_in`). Direct-response sales pages (VSL, 8-section main, high-ticket, order-bump asset stacks) belong to Skill 56 `sales-page-assets`.
-version: 1.3.39
+version: 1.3.40
 ---
 
 # BlackCEO Signature Page — Skill 71
@@ -211,6 +211,10 @@ A page type's own form follows the same rule: `build_production_request.py --cop
 `scripts/stage_executor.py` is the single execution entry point for the four image stages (`desktop-wireframe`, `mobile-tablet`, `visual-mockup`, `final-mockups`) and for one `image-generation-qc` item. It is the production command `scripts/shared_page_service.py --pipeline-command` passes, and the command a `scripts/swarm_runner.py --worker-cmd` worker runs for one item. It calls Skill 74 once per image and writes the files into the stage folders with a `<stage>/stage-executor-record.json`. It never closes a stage and never writes a gate receipt. `--provider stub` (the default) is inert and writes placeholders; the real switch is `--provider kie --allow-paid` with `KIE_API_KEY` set. Contract: `references/generation-execution.md`.
 
 Paid-call approvals, client-owned credentials, provider limits, and retry rules remain owned by the executing provider skill and fleet policy.
+
+## Native export and the production record (final-mockups)
+
+A mockup section arrives at its native size and the stage needs page-width slices plus a build record. Two scripts do it, never a hand edit: `scripts/export_native_slices.py <run_dir>/final-mockups` keeps each native in `raw-native/` (never overwritten, sha256 kept), writes the Lanczos page-width export (desktop 1440 px, mobile 390 px, aspect kept, never upscaled) and `export-receipt.json`; then `scripts/write_production_record.py <run_dir>` authors `final-mockups/production-record.json` and `final-mockups/mobile/production-record.json` from the request, the stage executor record, the spend ledger, the saved image-jobs requests, the re-verified export receipt, the real slice sizes and an OCR read-back of each native (`design_board.ocr_text`) against the section copy, and runs `validate_production_record.py` itself. A section whose image contradicts its copy fails and no record is left. Run both under `nice`, one at a time. The SOP's Stage 11 QC leg has the full procedure.
 
 ## Swarm execution
 

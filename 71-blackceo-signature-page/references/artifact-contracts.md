@@ -1207,6 +1207,10 @@ failures (section count, section order, image-placement class,
 heading-to-body ratio beyond tolerance), a skipped drift pass, or an
 unavailable one each block close by name.
 
+### Tool-authored records and the export receipt (`final-mockups`)
+
+`final-mockups/production-record.json` (desktop, slices `desktop/part-NN.png`, `page_width` 1440) and `final-mockups/mobile/production-record.json` (slices `part-NN.png`, `page_width` 390, `layout_reference` `../mobile-tablet/section-NN.png`) are written by `scripts/write_production_record.py`, never by hand. The slice is the page-width export, so `width`, `height` and `generation.native_aspect` are the export's real size (the native's shape, scaled); the native's own size is `generation.native_pixels` and the file is kept at `generation.source_image` with `generation.source_sha256`. Each section also carries an `export` block (`source_px`, `scale_factor`, `upscaled`, `method`, the receipt name and `receipt_sha256`, `native_path`, `native_sha256`, `output_sha256`) citing `final-mockups/export-receipt.json`, which `scripts/export_native_slices.py` writes: `kind: native-slice-export`, one entry per slice with the native's and the output's path, sha256, width, height and bytes, the method, and `receipt_sha256`, the hash of the receipt's own body. The `text_qc` read is made on the native image: `expected_text` is the section's copy plus its button text, `readback_text` is the distinct words of the OCR read that are in that text (garbled words included, so the validator recomputes them), and the record keeps the verbatim `ocr_text`, `ocr_coverage_of_copy` and the words set aside (`ocr_brand_words_seen`, `ocr_variants_of_copy_words`, `ocr_noise_ignored`). Extra keys are allowed by the validator and are never read as gate fields.
+
 ## Generation receipt (stage `image-generation-qc`)
 
 The stage receipt `private/receipts/image-generation-qc.json` carries a `transport` block and a `cost`

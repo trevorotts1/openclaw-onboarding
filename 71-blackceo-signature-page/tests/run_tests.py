@@ -61,6 +61,8 @@ MODULES = [
     "test_visual_standards.py",
     "test_item11_wireframe_artifact.py",
     "test_item13_production_method.py",
+    "test_export_native_slices.py",
+    "test_write_production_record.py",
     "test_item12_hybrid_board.py",
     "test_item15_trait_gates.py",
     "test_wireframe_build_spec.py",
