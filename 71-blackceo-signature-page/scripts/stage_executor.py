@@ -2159,6 +2159,48 @@ def promote_attempt(run_dir: Path, job: dict, source: Path | None = None) -> boo
     return True
 
 
+EXPORT_RECEIPT = "export-receipt.json"
+
+
+def _export_body_hash(receipt: dict) -> str:
+    body = {k: v for k, v in receipt.items() if k != "receipt_sha256"}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def delivered_bytes_match(run_dir: Path, stage: str, out: Path, recorded_sha: str) -> bool:
+    """SWB-560: does the file at `out` still carry the bytes this attempt recorded as delivered?
+    Yes when it hashes to the recorded sha256. Also yes when `out` is the page-width export of that
+    delivery: the stage's tamper-evident export-receipt.json (export_native_slices.py; its
+    receipt_sha256 must match its own body) has a row whose output path is `out`, whose output
+    sha256 is the file now on disk and whose native sha256 is the recorded delivery, and the kept
+    native file in the raw folder still hashes to it. A slice replaced by anything else, or whose
+    native is gone or changed, does not match."""
+    out = Path(out)
+    if not recorded_sha or not out.is_file():
+        return False
+    now = sha256(out)
+    if now == recorded_sha:
+        return True
+    root = Path(run_dir) / stage
+    receipt = read_json_file(root / EXPORT_RECEIPT)
+    if not isinstance(receipt, dict) or receipt.get("kind") != "native-slice-export":
+        return False
+    if receipt.get("receipt_sha256") != _export_body_hash(receipt):
+        return False
+    for row in receipt.get("entries") or []:
+        if not isinstance(row, dict):
+            continue
+        o, n = row.get("output") or {}, row.get("native") or {}
+        if not o.get("path") or not n.get("path") or (root / o["path"]).resolve() != out.resolve():
+            continue
+        if o.get("sha256") != now or n.get("sha256") != recorded_sha:
+            continue
+        native = root / n["path"]
+        if native.is_file() and sha256(native) == recorded_sha:
+            return True
+    return False
+
+
 def reusable_record(run_dir: Path, ident: dict, out: Path) -> dict | None:
     """The newest settled attempt for THIS identity (same run, plan revision, page, viewport,
     stage and slot) whose delivered file still hashes — resume without a paid call."""
@@ -2177,7 +2219,7 @@ def reusable_record(run_dir: Path, ident: dict, out: Path) -> dict | None:
         rel = rec.get("file")
         if not rel or not (Path(run_dir) / rel).is_file():
             continue
-        if sha256(Path(run_dir) / rel) != rec.get("sha256"):
+        if not delivered_bytes_match(run_dir, str(ident.get("stage")), Path(run_dir) / rel, rec.get("sha256")):
             continue
         if best is None or int(got.get("attempt") or 0) > int((best.get("identity") or {}).get("attempt") or 0):
             best = rec
@@ -2206,7 +2248,8 @@ def adopt_prewired_attempt(run_dir: Path, ident: dict, out: Path, prompt: str) -
                 continue
             if any(got.get(f) != ident.get(f) for f in ("run", "page_instance", "viewport", "stage", "slot")):
                 continue
-            if not rec.get("file") or rec.get("sha256") != sha256(Path(out)):
+            if not rec.get("file") or not delivered_bytes_match(run_dir, str(ident.get("stage")), Path(out),
+                                                                 rec.get("sha256")):
                 continue
             if Path(run_dir) / rec["file"] != Path(out):
                 continue

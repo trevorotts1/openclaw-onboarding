@@ -234,6 +234,80 @@ class PartKeys(unittest.TestCase):
         self.assertIsNone(exe.adopt_prewired_attempt(self.run, desk, self.run / STAGE / "desktop" / "part-01.png", prompt))
 
 
+class ExportedPartsResume(unittest.TestCase):
+    """The final-mockups parts on disk are the Lanczos page-width exports of the natives the executor
+    delivered (export_native_slices.py). They must still resume; anything else must not."""
+
+    def setUp(self):
+        self._t = tempfile.TemporaryDirectory()
+        self.run = Path(self._t.name) / "run"
+        (self.run / STAGE / "mobile").mkdir(parents=True)
+        (self.run / STAGE / "raw-native-x" / "mobile").mkdir(parents=True)
+        (self.run / "intake.json").write_text(json.dumps({"run_id": "r1"}))
+        self.req = request()
+        self.out = self.run / STAGE / "mobile" / "part-01.png"
+        native = self.run / STAGE / "raw-native-x" / "mobile" / "part-01.png"
+        native.write_bytes(b"native-bytes")
+        self.out.write_bytes(b"exported-bytes")
+        self.native = native
+        legacy = exe.base_identity(self.run, self.req, stage=STAGE, slot="mobile/part-01.png", viewport="390x1080")
+        ident = exe.allocate_attempt(self.run, legacy)
+        self.prompt = "the prompt"
+        exe.write_attempt_result(self.run, ident, {
+            "file": f"{STAGE}/mobile/part-01.png", "sha256": exe.sha256(native), "state": "settled",
+            "prompt_sha256": hashlib.sha256(self.prompt.encode()).hexdigest(), "attempt": ident["attempt"]})
+        self.write_receipt()
+        self.new = exe.base_identity(self.run, self.req, stage=STAGE, slot="mobile/part-01.png",
+                                     viewport="390x1080", section=self.req["sections"][0], index=1)
+
+    def tearDown(self):
+        self._t.cleanup()
+
+    def write_receipt(self, mutate=None):
+        rec = {"kind": "native-slice-export", "entries": [{
+            "viewport": "mobile", "section_part": "part-01.png",
+            "native": {"path": "raw-native-x/mobile/part-01.png", "sha256": exe.sha256(self.native)},
+            "output": {"path": "mobile/part-01.png", "sha256": exe.sha256(self.out)}}]}
+        if mutate:
+            mutate(rec)
+        rec["receipt_sha256"] = exe._export_body_hash(rec)
+        (self.run / STAGE / "export-receipt.json").write_text(json.dumps(rec))
+
+    def test_the_export_of_the_delivered_native_resumes(self):
+        self.assertIsNotNone(exe.adopt_prewired_attempt(self.run, self.new, self.out, self.prompt))
+
+    def test_a_slice_replaced_by_anything_else_does_not_resume(self):
+        self.out.write_bytes(b"someone-edited-it")
+        self.assertIsNone(exe.adopt_prewired_attempt(self.run, self.new, self.out, self.prompt))
+
+    def test_an_edited_receipt_does_not_resume(self):
+        path = self.run / STAGE / "export-receipt.json"
+        data = json.loads(path.read_text())
+        data["entries"][0]["output"]["sha256"] = exe.sha256(self.out)
+        data["note"] = "edited"
+        path.write_text(json.dumps(data))
+        self.assertIsNone(exe.adopt_prewired_attempt(self.run, self.new, self.out, self.prompt))
+
+    def test_a_missing_or_changed_native_does_not_resume(self):
+        self.native.write_bytes(b"changed-native")
+        self.assertIsNone(exe.adopt_prewired_attempt(self.run, self.new, self.out, self.prompt))
+        self.native.unlink()
+        self.assertIsNone(exe.adopt_prewired_attempt(self.run, self.new, self.out, self.prompt))
+
+    def test_a_receipt_row_for_another_native_does_not_resume(self):
+        self.write_receipt(lambda r: r["entries"][0]["native"].update(sha256="0" * 64))
+        self.assertIsNone(exe.adopt_prewired_attempt(self.run, self.new, self.out, self.prompt))
+
+    def test_resume_under_the_current_key_follows_the_same_rule(self):
+        ident = exe.allocate_attempt(self.run, self.new)
+        exe.write_attempt_result(self.run, ident, {
+            "file": f"{STAGE}/mobile/part-01.png", "sha256": exe.sha256(self.native), "state": "settled",
+            "attempt": ident["attempt"]})
+        self.assertIsNotNone(exe.reusable_record(self.run, self.new, self.out))
+        self.out.write_bytes(b"other")
+        self.assertIsNone(exe.reusable_record(self.run, self.new, self.out))
+
+
 class OverrideBuilder(unittest.TestCase):
     def _load(self, doc, stage=STAGE):
         sections = [{"section_id": str(n), "layout": f"L{n}", "slots": [{"slot_id": f"I{n}", "aspect_ratio": "1:1"}]}
