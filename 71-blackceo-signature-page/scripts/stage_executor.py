@@ -1410,8 +1410,9 @@ def section_typed_references(stage: str, width: int, resolved: dict, section: di
 def stage_prompt(stage: str, section: dict, index: int, width: int,
                  request: dict, ratio: str | None = None,
                  with_sizes: bool = False, strict_floor: bool = False,
-                 typed_refs: list | None = None):
+                 typed_refs: list | None = None, platform: str | None = None):
     slots = section.get("slots") or []
+    platform = platform or viewport_platform(f"{width}x0")
     resolved = resolve_composition(section, index, request)
     by_slot = {id(e["slot"]): e["treatment"] for e in resolved["slots"]}
     slot_words = "; ".join(
@@ -1425,7 +1426,8 @@ def stage_prompt(stage: str, section: dict, index: int, width: int,
         "section_name": section.get("section_name") or section["section_id"],
         "copy": section.get("copy") or "",
         "slots": slot_words,
-        "layout": str(section.get("layout") or ""),
+        "layout": "\n".join(t for t in (str(section.get("layout") or ""),
+                                        str(section.get("layout_mobile") or "") if platform == "mobile" else "") if t),
         "width": str(width),
         "ratio": ratio or "",
         "style": request.get("style") or "",
@@ -1968,14 +1970,38 @@ def _section_sources(run_dir: Path, section_id: str) -> dict:
     return out
 
 
-def section_revision(run_dir: Path, request: dict, section: dict, index: int) -> str:
-    """SWB-550: the digest of ONE section's request inputs: that section's own entry (copy, slots,
+# SWB-560: the section fields that belong to ONE viewport. A mobile-only design-text entry and the
+# mobile frame ratio never reach the desktop slice's prompt, so they never enter its key.
+MOBILE_ONLY_SECTION_KEYS = ("layout_aspect_ratio", "layout_mobile")
+MOBILE_ONLY_ROW_KEYS = ("aspect_ratio", "viewport", "mobile_text")
+MOBILE_MAX_WIDTH = 768  # a slice narrower than this is the phone slice (390); the desktop slice is 1440
+
+
+def viewport_platform(viewport) -> str:
+    """`mobile` or `desktop` for a viewport label such as "390x1080" (the width decides)."""
+    try:
+        width = int(str(viewport).split("x", 1)[0])
+    except (TypeError, ValueError):
+        return "desktop"
+    return "mobile" if width < MOBILE_MAX_WIDTH else "desktop"
+
+
+def section_revision(run_dir: Path, request: dict, section: dict, index: int,
+                     platform: str = "mobile") -> str:
+    """SWB-550/560: the digest of ONE part's request inputs: that section's own entry (copy, slots,
     layout with its appended override text, type specs), its own layout-override row, its own
     copy-manifest and image-inventory rows, plus what every section shares (the shared design
-    prose and stage template, the brand, the model, the style, the spec version, the section
-    order). Changing section 3's override text changes only section 3's revision; changing the
-    shared prose, the brand or the spec version changes every section's."""
+    prose and stage template, the brand, the model, the style, the design board, the spec version,
+    the section order and count). Changing section 3's override text changes only section 3's
+    revision; changing the shared prose, the brand, the design board or the spec version changes
+    every section's.
+
+    `platform` is the viewport of the slice ("desktop" or "mobile"). A desktop slice's key leaves
+    out what only the phone slice reads (its mobile-only design text and its frame ratio), so
+    editing a section's mobile entry re-keys that section's mobile slice and not its desktop one.
+    A mobile key carries everything (the default, which is also the SWB-550 behaviour)."""
     request = request or {}
+    platform = "desktop" if platform == "desktop" else "mobile"
     section_id = str((section or {}).get("section_id"))
     sections = request.get("sections") or []
     shared = {k: v for k, v in request.items()
@@ -1986,10 +2012,17 @@ def section_revision(run_dir: Path, request: dict, section: dict, index: int) ->
     shared["section_order"] = [str((s or {}).get("section_id")) for s in sections]
     block = request.get("layout_overrides") if isinstance(request.get("layout_overrides"), dict) else None
     own_override = _own_rows(block.get("applied"), section_id) if block else []
+    own_section = section
+    if platform == "desktop":
+        own_override = [{k: v for k, v in row.items() if k not in MOBILE_ONLY_ROW_KEYS}
+                        for row in own_override]
+        if isinstance(section, dict):
+            own_section = {k: v for k, v in section.items() if k not in MOBILE_ONLY_SECTION_KEYS}
     step = request.get("_step_band")
     own_step = step if isinstance(step, dict) and str(step.get("section_id")) == section_id else None
-    payload = {"scheme": "section-v1", "shared": shared, "index": int(index), "section": section,
-               "override": own_override, "override_stage": block.get("stage") if block else None,
+    payload = {"scheme": "part-v1", "platform": platform, "shared": shared, "index": int(index),
+               "section": own_section, "override": own_override,
+               "override_stage": block.get("stage") if block else None,
                "step_band": own_step, "sources": _section_sources(run_dir, section_id)}
     return hashlib.sha256(_canon(payload).encode("utf-8")).hexdigest()
 
@@ -2008,10 +2041,11 @@ def base_identity(run_dir: Path, request: dict, *, stage: str, slot: str,
                   viewport: str, section: dict | None = None, index: int | None = None) -> dict:
     """The six identity fields that are known before an attempt is allocated. Given a stage's
     `section` (and its 1-based `index`) the revision covers only that section's inputs
-    (SWB-550); without one it is the whole-plan revision."""
+    (SWB-550) and that slice's own viewport (SWB-560); without one it is the whole-plan revision."""
     return {
         "run": run_identity(run_dir),
-        "plan_revision": (section_revision(run_dir, request, section, index or 0)
+        "plan_revision": (section_revision(run_dir, request, section, index or 0,
+                                           viewport_platform(viewport))
                           if section is not None else plan_revision(run_dir, request)),
         "page_instance": page_instance(run_dir, request),
         "viewport": str(viewport),
@@ -2806,7 +2840,8 @@ def run_stage(stage: str, run_dir: Path, request: dict, provider,
                 request_form(request), request)
             prompt, prompt_sizes = stage_prompt(
                 stage, section, index, width, request, ratio, with_sizes=True,
-                strict_floor=provider.name == "kie", typed_refs=typed)
+                strict_floor=provider.name == "kie", typed_refs=typed,
+                platform=_platform(stage, template))
             if provider.name == "kie":
                 require_brand_line(stage, prompt)
             base = base_identity(run_dir, request, stage=stage, slot=slot,

@@ -929,7 +929,10 @@ def folded_levels(run_dir):
     return len(mains) if len(mains) >= 2 else None
 
 
-LAYOUT_OVERRIDE_KEYS = ("layout", "negatives", "aspect_ratio")
+LAYOUT_OVERRIDE_KEYS = ("layout", "negatives", "aspect_ratio", "mobile_layout", "mobile_negatives")
+# SWB-560: `mobile_layout` / `mobile_negatives` are design text only the phone slice's prompt receives
+# (kept in the section's `layout_mobile`, never merged into `layout`), so editing a section's mobile entry
+# re-keys that section's mobile slice and leaves its desktop slice settled. Same stages as aspect_ratio.
 # SWB-290: stages that draw a mobile slice (the only viewport an aspect_ratio override reaches)
 ASPECT_OVERRIDE_STAGES = ("mobile-tablet", "visual-mockup", "final-mockups")
 
@@ -995,8 +998,21 @@ def load_layout_overrides(path, stage, sections):
                                  "or section order")
             if "aspect_ratio" in entry:
                 _check_aspect_override(stage_key, sid, entry["aspect_ratio"], ids[str(sid)])
+            if "mobile_layout" in entry or "mobile_negatives" in entry:
+                where = f"layout overrides: {stage_key!r} section {sid!r}"
+                if stage_key not in ASPECT_OVERRIDE_STAGES:
+                    raise BuildError(f"{where} `mobile_layout` applies to a stage that draws a mobile slice "
+                                     f"({', '.join(ASPECT_OVERRIDE_STAGES)}), not {stage_key!r}")
+                if not isinstance(entry.get("mobile_layout"), str) or not entry["mobile_layout"].strip():
+                    raise BuildError(f"{where} needs a non-empty `mobile_layout` string "
+                                     "(`mobile_negatives` goes with it)")
+                if "mobile_negatives" in entry and not isinstance(entry["mobile_negatives"], str):
+                    raise BuildError(f"{where} `mobile_negatives` must be a string")
+            only_mobile = "mobile_layout" in entry and "layout" not in entry and "negatives" not in entry
             if "aspect_ratio" in entry and "layout" not in entry and "negatives" not in entry:
                 pass  # a frame-ratio-only entry appends no text (SWB-300: but never carries negatives with it)
+            elif only_mobile:
+                pass  # a mobile-only entry appends no text to the shared layout (SWB-560)
             elif not isinstance(entry.get("layout"), str) or not entry["layout"].strip():
                 raise BuildError(f"layout overrides: {stage_key!r} section {sid!r} needs a non-empty "
                                  "`layout` string")
@@ -1012,6 +1028,13 @@ def load_layout_overrides(path, stage, sections):
                 text += "\nNEGATIVES: " + entry["negatives"].strip()
             section["layout"] = "\n".join(([section["layout"]] if section.get("layout") else []) + [text])
         row = {"section_id": str(section["section_id"]), "appended_text": text}
+        if entry.get("mobile_layout"):  # SWB-560: the phone slice's own design text; the desktop prompt never sees it
+            mobile = entry["mobile_layout"].strip()
+            if entry.get("mobile_negatives", "").strip():
+                mobile += "\nNEGATIVES: " + entry["mobile_negatives"].strip()
+            section["layout_mobile"] = mobile
+            row["mobile_text"] = mobile
+            row["viewport"] = "mobile"
         if "aspect_ratio" in entry:  # design-only; stage_executor.target_ratio reads it for the mobile slice
             section["layout_aspect_ratio"] = {"stage": stage, "viewport": "mobile", "ratio": entry["aspect_ratio"]}
             row["aspect_ratio"] = entry["aspect_ratio"]
@@ -1282,6 +1305,8 @@ def main(argv=None) -> int:
               f"sections={','.join(x['section_id'] for x in lo['applied']) or 'none'}")
         for x in lo["applied"]:
             print(f"LAYOUT-OVERRIDE section {x['section_id']}: {x['appended_text']}")
+            if x.get("mobile_text"):
+                print(f"LAYOUT-OVERRIDE-MOBILE section {x['section_id']}: {x['mobile_text']}")
             if x.get("aspect_ratio"):
                 print(f"LAYOUT-OVERRIDE-ASPECT section {x['section_id']}: {x['aspect_ratio']} ({x['viewport']})")
     print(f"CHECKED run_dir={run_dir} against={'; '.join(m['checked_against']) or 'request only'}")
