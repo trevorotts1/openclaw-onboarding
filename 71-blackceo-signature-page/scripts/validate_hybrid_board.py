@@ -49,11 +49,26 @@ This validator is the deterministic floor. It checks:
      wireframe section plan (desktop-wireframe/section-plan.json) is
      present in the run, the guide's section ids equal that record's
      section ids, in order.
-  4. With --check-board: the composed board exists, and its receipt
+  4. Per-section typography (1.3.59): when the typography source (the
+     font map) carries its `typography` list, each guide section's
+     type_specs equal what the font map gives THAT section, and only the
+     elements the section has: the hero section (the one the font map's
+     hero_headline serves) prints the hero headline spec, every other
+     section the section_heading spec; a CTA spec is present only for a
+     section the font map's `ctas` names and absent for every other. A
+     section with no button must not print a CTA spec.
+  5. With --check-board: the composed board exists, and its receipt
      (final-mockups/hybrid-board-receipt.json) names the same input
      hashes as the record and the board file's own sha256, so a board
      composed from other artifacts, or an input changed after
-     composition, fails by name.
+     composition, fails by name. The receipt's guide block must also
+     show (1.3.59) that each guide section's block sits at its mockup
+     section's own vertical position (the desktop stitch receipt's
+     y_offset scaled to the panel, within ALIGN_TOLERANCE_PX), that the
+     thumbnails are drawn at no less than MIN_THUMB_SCALE of the
+     wireframe slice's own size (so the wireframe's printed annotations
+     stay readable), and, when Pillow is present, that the thumbnail
+     pixels are on the board at the recorded place.
 
 Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 """
@@ -65,6 +80,10 @@ import sys
 from pathlib import Path
 
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
+# The guide column is a presentation of the wireframe slices, whose printed annotations are about 25 px
+# tall at the 1440 px page width: a thumbnail drawn below half size shrinks them under 12 px, unreadable.
+MIN_THUMB_SCALE = 0.5
+ALIGN_TOLERANCE_PX = 4
 
 
 def sha256(path):
@@ -73,6 +92,107 @@ def sha256(path):
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _size_phrase(element):
+    sizes = (element or {}).get("sizes") or {}
+    parts = []
+    for viewport in ("desktop", "tablet"):
+        size = sizes.get(viewport)
+        if isinstance(size, dict) and "px" in size and "line_height" in size:
+            parts.append(f"{size['px']}px / {size['line_height']} {viewport}")
+    return ", ".join(parts)
+
+
+def _family(font_map, role):
+    fam = ((font_map.get("families") or {}).get(role) or {}).get("family")
+    return fam or (font_map.get("fonts") or {}).get(role)
+
+
+def _spec(font_map, element, extras=False):
+    phrase = _size_phrase(element)
+    family = _family(font_map, (element or {}).get("role"))
+    if not phrase or not family:
+        return None
+    text = f"{family} {phrase}"
+    if extras:
+        if element.get("style"):
+            text += f", {element['style']}"
+        if element.get("letter_spacing"):
+            text += f", tracking {element['letter_spacing']}"
+    return text
+
+
+def hero_section_id(font_map, first_id):
+    """The section the font map's hero headline serves ('Section 1 headline: ...'); else the first."""
+    for el in font_map.get("typography") or []:
+        if isinstance(el, dict) and el.get("element") == "hero_headline":
+            m = re.match(r"\s*Section\s+([A-Za-z0-9_-]+)", str(el.get("serves") or ""))
+            if m:
+                return m.group(1)
+    return first_id
+
+
+def derive_type_specs(font_map, section_ids):
+    """What the closed font map gives each section: {section_id: {"heading", "body"[, "cta"]}}, only the
+    elements the section has. Returns None when the font map carries no usable typography list (a record
+    whose source is not a real font map is validated structurally only, as before)."""
+    if not isinstance(font_map, dict) or not isinstance(font_map.get("typography"), list):
+        return None
+    by_name = {e.get("element"): e for e in font_map["typography"] if isinstance(e, dict)}
+    body = _spec(font_map, by_name.get("body"))
+    hero = _spec(font_map, by_name.get("hero_headline"))
+    heading = _spec(font_map, by_name.get("section_heading"))
+    cta = _spec(font_map, by_name.get("cta_label"), extras=True)
+    if not (body and hero and heading):
+        return None
+    ctas = font_map.get("ctas")
+    cta_sections = {str(c.get("section")) for c in ctas if isinstance(c, dict)} if isinstance(ctas, list) else None
+    hero_id = hero_section_id(font_map, section_ids[0] if section_ids else None)
+    out = {}
+    for sid in section_ids:
+        specs = {"heading": hero if sid == hero_id else heading, "body": body}
+        if cta_sections is None or sid in cta_sections:
+            if cta:
+                specs["cta"] = cta
+        out[sid] = specs
+    return out
+
+
+def _type_spec_failures(guide, run_dir):
+    """Per-section typography against the font map (see the module docstring, 4)."""
+    if run_dir is None or not isinstance(guide, dict):
+        return []
+    typo = guide.get("typography_source")
+    if not isinstance(typo, str) or not typo:
+        return []
+    font_map = _read_json(Path(run_dir) / typo)
+    sections = [s for s in guide.get("sections") or [] if isinstance(s, dict) and isinstance(s.get("section_id"), str)]
+    derived = derive_type_specs(font_map, [s["section_id"] for s in sections])
+    if derived is None:
+        return []
+    out = []
+    for s in sections:
+        sid, want, got = s["section_id"], derived[s["section_id"]], s.get("type_specs")
+        if not isinstance(got, dict):
+            continue
+        for field in ("heading", "body", "cta"):
+            if field in want:
+                if got.get(field) != want[field]:
+                    out.append(f"guide section {sid}: type_specs.{field} is {got.get(field)!r}, the font map "
+                               f"({typo}) gives this section {want[field]!r}")
+            elif field in got:
+                out.append(f"guide section {sid}: type_specs.{field} is printed ({got[field]!r}) but the font map "
+                           f"({typo}) gives this section no {field.upper() if field == 'cta' else field} "
+                           f"(print only the elements the section has)")
+    return out
 
 
 def _panel_failures(data, key, run_dir):
@@ -140,6 +260,15 @@ def _refreshed_from_failures(data):
         for row in (guide_block.get("new") if isinstance(guide_block, dict) else None) or []:
             if recorded.get(str(row.get("section_id"))) != (row.get("wireframe_thumbnail"), row.get("sha256")):
                 out.append(f"guide section {row.get('section_id')} differs from refreshed_from.guide.new: "
+                           f"the record was changed after its refresh")
+    spec_block = block.get("guide_type_specs")
+    if spec_block is not None:  # SWB-580: the per-section type specs were re-derived from the font map
+        recorded = {str(x.get("section_id")): x.get("type_specs")
+                    for x in ((data.get("guide") or {}).get("sections") or []) if isinstance(x, dict)}
+        new_specs = spec_block.get("new") if isinstance(spec_block, dict) else None
+        for sid, specs in (new_specs or {}).items():
+            if recorded.get(str(sid)) != specs:
+                out.append(f"guide section {sid}: type_specs differ from refreshed_from.guide_type_specs.new: "
                            f"the record was changed after its refresh")
     return out
 
@@ -213,12 +342,20 @@ def check_board(data, run_dir=None):
                     f"guide section {label}: thumbnail {thumb} does not hash to the recorded sha256 "
                     "(the guide's thumbnails must be the approved wireframe slices, byte for byte)")
         specs = section.get("type_specs")
+        cta_optional = False
+        if run_dir is not None and isinstance(sid, str) and sid and isinstance(typo_source, str) and typo_source:
+            derived_one = derive_type_specs(_read_json(Path(run_dir) / typo_source), [sid])
+            cta_optional = derived_one is not None and "cta" not in derived_one[sid]
         if not isinstance(specs, dict):
             failures.append(f"guide section {label}: type_specs is required (the section's typography specs: heading, body, cta)")
         else:
             for field in ("heading", "body", "cta"):
+                if field == "cta" and cta_optional:
+                    continue  # the font map gives this section no button: the spec is validated absent below
                 if not isinstance(specs.get(field), str) or not specs.get(field):
                     failures.append(f"guide section {label}: type_specs.{field} is required (the section's printed typography spec)")
+
+    failures.extend(_type_spec_failures(guide, run_dir))
 
     if run_dir is not None and guide_ids:
         run_dir = Path(run_dir)
@@ -274,7 +411,82 @@ def check_composed_board(data, run_dir):
     if receipt_inputs != expected_inputs:
         failures.append("the receipt's input hashes do not match the board record "
                         "(the board must be composed from exactly the artifacts the record names)")
+    failures.extend(_guide_geometry_failures(data, receipt, run_dir, board))
     return failures
+
+
+def _desktop_tops(data, receipt, run_dir):
+    """{section_id: expected top y on the sheet} recomputed from the desktop stitch receipt (never from the
+    composer's own receipt), or None when the run carries no stitch receipt for the desktop panel."""
+    source = ((data.get("desktop_panel") or {}).get("source"))
+    if not isinstance(source, str):
+        return None
+    stitch = _read_json(Path(run_dir) / Path(source).parent / "stitch-receipt.json")
+    panel = (receipt.get("panels") or {}).get("desktop") or {}
+    if not isinstance(stitch, dict) or not stitch.get("page_width") or not panel.get("width"):
+        return None
+    scale = panel["width"] / stitch["page_width"]
+    return {str(r.get("section_id")): panel["y"] + round(r["y_offset"] * scale)
+            for r in stitch.get("sections") or [] if isinstance(r, dict) and "y_offset" in r}
+
+
+def _guide_geometry_failures(data, receipt, run_dir, board):
+    """1.3.59: the guide blocks sit at their mockup sections, and the wireframe thumbnails are readable."""
+    guide = receipt.get("guide")
+    if not isinstance(guide, dict) or not isinstance(guide.get("sections"), list):
+        return ["the board receipt carries no guide geometry (compose the board again with "
+                "scripts/build_hybrid_board.py; a board composed before 1.3.59 stacked the guide from the top "
+                "and printed the wireframe annotations at about 7 px)"]
+    out = []
+    expected = _desktop_tops(data, receipt, run_dir)
+    rows = {str(r.get("section_id")): r for r in guide["sections"] if isinstance(r, dict)}
+    ids = [str(x.get("section_id")) for x in (data.get("guide") or {}).get("sections") or [] if isinstance(x, dict)]
+    if list(rows) != ids:
+        out.append(f"the board receipt's guide sections {list(rows)} are not the record's {ids}, in order")
+    for sid in ids:
+        row = rows.get(sid)
+        if row is None:
+            continue
+        thumb = row.get("thumbnail") or {}
+        scale = row.get("thumbnail_scale")
+        if not isinstance(scale, (int, float)) or scale < MIN_THUMB_SCALE:
+            out.append(f"guide section {sid}: the wireframe thumbnail is drawn at {scale!r} of its own size, below "
+                       f"{MIN_THUMB_SCALE}; its printed annotations are unreadable at that size")
+        top = (expected or {}).get(sid)
+        if top is None:
+            top = row.get("mockup_top")
+            if expected is not None:
+                out.append(f"guide section {sid}: the desktop stitch receipt has no section {sid}")
+                continue
+        if not isinstance(top, (int, float)) or not isinstance(thumb.get("y"), int):
+            out.append(f"guide section {sid}: the board receipt records no thumbnail position")
+            continue
+        drift = abs(thumb["y"] - top)
+        if drift > ALIGN_TOLERANCE_PX:
+            out.append(f"guide section {sid}: its block sits {drift} px from the mockup section it describes "
+                       f"(block at y {thumb['y']}, mockup section at y {top}; tolerance {ALIGN_TOLERANCE_PX} px)")
+    if out or run_dir is None:
+        return out
+    try:
+        from PIL import Image, ImageChops, ImageStat
+    except ImportError:
+        return out
+    try:
+        with Image.open(board) as im:
+            sheet = im.convert("RGB")
+        for section in (data.get("guide") or {}).get("sections") or []:
+            row = rows.get(str(section.get("section_id"))) or {}
+            thumb = row.get("thumbnail") or {}
+            with Image.open(Path(run_dir) / section["wireframe_thumbnail"]) as t:
+                want = t.convert("RGB").resize((thumb["width"], thumb["height"]))
+            box = (thumb["x"], thumb["y"], thumb["x"] + thumb["width"], thumb["y"] + thumb["height"])
+            got = sheet.crop(box)
+            if got.size != want.size or sum(ImageStat.Stat(ImageChops.difference(got, want)).mean) / 3 > 2.0:
+                out.append(f"guide section {section.get('section_id')}: the board does not show the pinned wireframe "
+                           f"thumbnail at the place its receipt records")
+    except Exception as exc:  # unreadable pixels are a failure, not a pass
+        out.append(f"the board's guide thumbnails could not be checked against the board pixels ({type(exc).__name__})")
+    return out
 
 
 def main(argv=None):

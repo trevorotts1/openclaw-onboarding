@@ -123,6 +123,7 @@ MODULES = [
     "test_swb550_section_keys.py",
     "test_swb560_part_keys.py",
     "test_swb570_shared_utils_fallback.py",
+    "test_swb580_hybrid_guide.py",
 ]
 
 def skip_reason(stdout):

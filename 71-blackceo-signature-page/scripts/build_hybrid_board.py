@@ -22,6 +22,13 @@ scripts/validate_hybrid_board.py):
     section, in order, its number and name, its mini wireframe
     thumbnail (the approved desktop wireframe slice, scaled down), and
     its typography specs (trait H2: the guide matches the mockups).
+    Each guide block is placed at the vertical position of the mockup section it describes (1.3.59):
+    its top is the desktop stitch receipt's y_offset for that section id, scaled to the panel, so the
+    wireframe thumbnail and specs sit beside their own mockup section. The thumbnail is the contract's
+    wireframe slice (H2 names mini wireframe thumbnails; the mockup is the left panel), drawn at 720 px
+    wide (half of the 1440 px page) so the annotations the wireframe prints stay readable, with its specs
+    beside it at 15 px. The specs come per section from the closed font map (validate_hybrid_board.
+    derive_type_specs): only the elements the section has.
 
 The composer refuses to build from a record that does not pass
 validation, so a board can never be composed from artifacts other than
@@ -83,11 +90,14 @@ MARGIN = 24
 GAP = 24
 HEADER_H = 40
 DESKTOP_W = 720
-GUIDE_W = 400
+THUMB_W = 720      # the wireframe slice at half its 1440 px page width: its ~25 px annotations stay ~12 px
+SPEC_GAP = 14
+SPEC_W = 290
+GUIDE_W = THUMB_W + SPEC_GAP + SPEC_W
 MOBILE_W = 280
-SECTION_GAP = 16
-LINE_H = 18
-THUMB_GAP = 6
+SPEC_FONT = 15
+NAME_FONT = 19
+LINE_H = 20
 
 
 def _font(size=14):
@@ -108,6 +118,38 @@ def _scaled(im, width):
 
 def _wrap(text, width_chars):
     return textwrap.wrap(str(text), width=width_chars) or [""]
+
+
+def _wrap_px(draw, text, font, max_w):
+    """Greedy word wrap to a pixel width (a word wider than the width stands on its own line)."""
+    lines, line = [], ""
+    for word in str(text).split():
+        trial = f"{line} {word}".strip()
+        if line and draw.textlength(trial, font=font) > max_w:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    return lines + [line] if line else lines or [""]
+
+
+def _section_tops(run_dir, data, desktop_scale):
+    """{section_id: top y inside the desktop panel} from the desktop stitch receipt beside the panel, each
+    y_offset scaled to the panel. Raises ValueError (naming what is missing) when it cannot be derived:
+    the guide is never stacked from the top without a tie to the mockup sections."""
+    source = Path(data["desktop_panel"]["source"])
+    receipt, err = _read_json(Path(run_dir) / source.parent / STITCH_RECEIPT)
+    if err or not isinstance(receipt, dict) or not isinstance(receipt.get("sections"), list):
+        raise ValueError(f"cannot align the guide to the mockup sections: the desktop stitch receipt "
+                         f"{source.parent}/{STITCH_RECEIPT} is missing or lists no sections")
+    tops = {}
+    for row in receipt["sections"]:
+        if isinstance(row, dict) and isinstance(row.get("y_offset"), int):
+            tops[str(row.get("section_id"))] = round(row["y_offset"] * desktop_scale)
+    missing = [str(x["section_id"]) for x in data["guide"]["sections"] if str(x["section_id"]) not in tops]
+    if missing:
+        raise ValueError(f"cannot align the guide: the desktop stitch receipt has no section(s) {missing}")
+    return tops
 
 
 STAGE = "final-mockups"
@@ -375,6 +417,28 @@ def _repin_guide(prior_guide, info):
                                         "stitch_receipt": info["stitch_receipt"]}}
 
 
+def _rederive_type_specs(run_dir, guide):
+    """SWB-580: write each guide section's type_specs from the closed font map (only the elements the
+    section has), in place. Returns the provenance block ({source, source_sha256, prior, new}) or None when
+    the guide's typography source carries no usable typography list (nothing to derive from)."""
+    typo = guide.get("typography_source")
+    if not isinstance(typo, str) or not typo:
+        return None
+    path = Path(run_dir) / typo
+    font_map = vhb._read_json(path)
+    sections = [x for x in guide.get("sections") or [] if isinstance(x, dict)]
+    derived = vhb.derive_type_specs(font_map, [str(x.get("section_id")) for x in sections])
+    if derived is None:
+        return None
+    prior, new = {}, {}
+    for sec in sections:
+        sid = str(sec.get("section_id"))
+        prior[sid] = sec.get("type_specs")
+        sec["type_specs"] = dict(derived[sid])
+        new[sid] = sec["type_specs"]
+    return {"source": typo, "source_sha256": vhb.sha256(path), "prior": prior, "new": new}
+
+
 def _provenance_hash(block):
     body = {k: v for k, v in block.items() if k != "receipt_sha256"}
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -417,6 +481,10 @@ def refresh_record(run_dir, record_name, now=None):
         if g_fails:
             return g_fails, None
         new["guide"] = new_guide
+    spec_block = None
+    if isinstance(new.get("guide"), dict):
+        new["guide"] = json.loads(json.dumps(new["guide"]))  # own copy: the prior record is never mutated
+        spec_block = _rederive_type_specs(run_dir, new["guide"])
     block = {
         "tool": "build_hybrid_board.py --refresh-record",
         "refreshed_at": now or datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -433,6 +501,8 @@ def refresh_record(run_dir, record_name, now=None):
     }
     if guide_block is not None:
         block["guide"] = guide_block
+    if spec_block is not None:
+        block["guide_type_specs"] = spec_block
     block["receipt_sha256"] = _provenance_hash(block)
     new["refreshed_from"] = block
     bad = vhb.check_board(new, run_dir=run_dir)
@@ -527,22 +597,33 @@ def compose_board(run_dir, data, overwrite, refusal_note=""):
     mobile = _scaled(load(data["mobile_panel"]["source"]), MOBILE_W)
 
     guide = data["guide"]
-    font = _font(14)
+    font = _font(SPEC_FONT)
+    name_font = _font(NAME_FONT)
     header_font = _font(16)
-    chars = max(10, GUIDE_W // 8)
-    guide_blocks = []
-    guide_height = 0
+    desktop_scale = DESKTOP_W / load(data["desktop_panel"]["source"]).width
+    try:
+        tops = _section_tops(run_dir, data, desktop_scale)
+    except ValueError as exc:
+        print(f"FAIL: refusing to compose the board; {exc}")
+        return 1
+    measure = ImageDraw.Draw(Image.new("RGB", (8, 8)))
+    guide_blocks, prev_bottom = [], 0
     for section in guide["sections"]:
-        thumb = _scaled(load(section["wireframe_thumbnail"]), GUIDE_W)
+        sid = str(section["section_id"])
+        thumb = _scaled(load(section["wireframe_thumbnail"]), THUMB_W)
         specs = section["type_specs"]
-        lines = [f"{section['number']}. {section['name']}"]
-        lines += _wrap(f"Heading: {specs['heading']}", chars)
-        lines += _wrap(f"Body: {specs['body']}", chars)
-        lines += _wrap(f"CTA: {specs['cta']}", chars)
-        block_height = thumb.height + THUMB_GAP + LINE_H * len(lines)
-        guide_blocks.append((thumb, lines, block_height))
-        guide_height += block_height + SECTION_GAP
-    guide_height -= SECTION_GAP
+        lines = [(f"{section['number']}. {section['name']}", name_font, (0, 0, 0))]
+        for label in ("heading", "body", "cta"):  # only the elements the section has
+            if specs.get(label):
+                lines += [(t, font, (40, 40, 40))
+                          for t in _wrap_px(measure, f"{label.capitalize() if label != 'cta' else 'CTA'}: "
+                                            f"{specs[label]}", font, SPEC_W)]
+        wanted = tops[sid]
+        y = max(wanted, prev_bottom)  # a block never overlaps the one above; any shift is recorded and checked
+        text_h = sum(LINE_H + (6 if f is name_font else 0) for _t, f, _c in lines)
+        guide_blocks.append({"section_id": sid, "thumb": thumb, "lines": lines, "y": y, "mockup_top": wanted})
+        prev_bottom = y + max(thumb.height, text_h)
+    guide_height = prev_bottom
 
     body_height = max(desktop.height, mobile.height, guide_height)
     sheet_w = MARGIN * 2 + DESKTOP_W + GAP + GUIDE_W + GAP + MOBILE_W
@@ -552,7 +633,7 @@ def compose_board(run_dir, data, overwrite, refusal_note=""):
 
     panels = [
         ("desktop", MARGIN, DESKTOP_W, "DESKTOP MOCKUP"),
-        ("guide", MARGIN + DESKTOP_W + GAP, GUIDE_W, "SECTION GUIDE"),
+        ("guide", MARGIN + DESKTOP_W + GAP, GUIDE_W, "SECTION GUIDE  (wireframe, same scale as the mockup)"),
         ("mobile", MARGIN + DESKTOP_W + GAP + GUIDE_W + GAP, MOBILE_W, "MOBILE MOCKUP"),
     ]
     geometry = {}
@@ -566,14 +647,21 @@ def compose_board(run_dir, data, overwrite, refusal_note=""):
     sheet.paste(mobile, (geometry["mobile"]["x"], top))
     geometry["mobile"]["height"] = mobile.height
     gx = geometry["guide"]["x"]
-    y = top
-    for thumb, lines, block_height in guide_blocks:
+    guide_rows = []
+    for blk, section in zip(guide_blocks, guide["sections"]):
+        thumb, y = blk["thumb"], top + blk["y"]
         sheet.paste(thumb, (gx, y))
-        ty = y + thumb.height + THUMB_GAP
-        for line in lines:
-            draw.text((gx, ty), line, fill="black", font=font)
-            ty += LINE_H
-        y += block_height + SECTION_GAP
+        draw.rectangle([gx, y, gx + thumb.width - 1, y + thumb.height - 1], outline=(120, 120, 120))
+        ty = y
+        for text, f, color in blk["lines"]:
+            draw.text((gx + THUMB_W + SPEC_GAP, ty), text, fill=color, font=f)
+            ty += LINE_H + (6 if f is name_font else 0)
+        with Image.open(run_dir / section["wireframe_thumbnail"]) as src:
+            native_w = src.width
+        guide_rows.append({"section_id": blk["section_id"], "number": section["number"],
+                           "thumbnail": {"x": gx, "y": y, "width": thumb.width, "height": thumb.height},
+                           "thumbnail_scale": round(thumb.width / native_w, 4),
+                           "mockup_top": top + blk["mockup_top"]})
     geometry["guide"]["height"] = guide_height
 
     sheet.save(output, "PNG")
@@ -589,6 +677,7 @@ def compose_board(run_dir, data, overwrite, refusal_note=""):
         "board_output": output_name,
         "sheet": {"width": sheet_w, "height": sheet_h},
         "panels": geometry,
+        "guide": {"min_thumbnail_scale": vhb.MIN_THUMB_SCALE, "sections": guide_rows},
         "inputs": inputs,
         "output_sha256": vhb.sha256(output),
     }

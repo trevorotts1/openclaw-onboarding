@@ -66,6 +66,10 @@ def make_run(tmp):
     (fm / "production-record.json").write_text(json.dumps({
         "artifact": "mockup", "stage": "final-mockups",
         "sections": [{"section_id": sid} for sid, _name in SECTIONS]}), encoding="utf-8")
+    (fm / "stitch-receipt.json").write_text(json.dumps({
+        "stitched_output": "desktop-full.png", "page_width": 80, "total_height": 120,
+        "sections": [{"order": 1, "section_id": "S01", "y_offset": 0, "height": 60},
+                     {"order": 2, "section_id": "S02", "y_offset": 60, "height": 60}]}), encoding="utf-8")
     fam = run / "font-action-plan"
     fam.mkdir(parents=True)
     (fam / "font-map.json").write_text("{}", encoding="utf-8")
@@ -181,13 +185,14 @@ class ComposerTest(unittest.TestCase):
             board = run / "final-mockups" / "hybrid-board.png"
             self.assertTrue(board.exists())
             with Image.open(board) as im:
-                # Sheet width: margins 2*24 + desktop 720 + gap 24 + guide 400 + gap 24 + mobile 280.
-                self.assertEqual(im.size[0], 1496)
+                # Sheet width: margins 2*24 + desktop 720 + gap 24 + guide 1024 (720 thumbnail + 14 + 290 specs)
+                # + gap 24 + mobile 280.
+                self.assertEqual(im.size[0], 2120)
                 px = im.convert("RGB")
                 # Desktop panel origin: (margin, margin + header) = (24, 64).
                 self.assertEqual(px.getpixel((30, 70)), DESKTOP_COLOR)
-                # Mobile panel origin x: 24 + 720 + 24 + 400 + 24 = 1192.
-                self.assertEqual(px.getpixel((1200, 70)), MOBILE_COLOR)
+                # Mobile panel origin x: 24 + 720 + 24 + 1024 + 24 = 1816.
+                self.assertEqual(px.getpixel((1824, 70)), MOBILE_COLOR)
                 # Guide column first thumbnail origin x: 24 + 720 + 24 = 768.
                 self.assertEqual(px.getpixel((774, 70)), THUMB_COLORS[0])
             receipt = json.loads(

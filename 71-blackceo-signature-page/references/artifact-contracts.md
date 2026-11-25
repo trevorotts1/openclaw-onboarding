@@ -1125,7 +1125,15 @@ traits H1/H2 of the Item 14 trait checklist):
   numbered and named in order, each with a mini wireframe thumbnail
   (the section's approved desktop wireframe slice, scaled down) and
   its typography specs (heading, body, CTA), drawn from the run's
-  typography spec record (`font-action-plan/font-map.json`).
+  typography spec record (`font-action-plan/font-map.json`). The specs
+  are per section and name only what the section has: the hero section
+  the hero headline spec, every other section the section heading spec,
+  and a CTA spec only for a section the font map's `ctas` names. Each
+  guide block is placed at its mockup section's vertical position (the
+  desktop stitch receipt's `y_offset`, scaled to the panel), and the
+  wireframe thumbnail is drawn at no less than half its own size so its
+  annotations stay readable (`validate_hybrid_board.py --check-board`
+  enforces both from the composer's receipt `guide` block).
 
 The board is composed deterministically by
 `scripts/build_hybrid_board.py` from the already-approved artifacts
