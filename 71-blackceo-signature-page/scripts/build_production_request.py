@@ -96,10 +96,41 @@ import page_kinds  # noqa: E402
 from validate_copy_structure import parse_manuscript  # noqa: E402
 
 
+def _shared_utils_candidates():
+    """Every place shared-utils can sit, nearest first (SWB-570).
+
+    The sibling of the skill folder as resolved (a symlinked skill folder resolves into the real
+    tree), the sibling as spelled (the symlink's own parent), OPENCLAW_SKILLS_DIR, the installed
+    ~/.openclaw/skills and the container /data/.openclaw/skills. A second, older skill copy under
+    ~/.claude/skills has no sibling shared-utils of its own, so the installed one is the fallback."""
+    import os
+    spelled = Path(os.path.abspath(__file__))
+    roots = [HERE.parents[1] / "shared-utils", spelled.parents[2] / "shared-utils"]
+    if os.environ.get("OPENCLAW_SKILLS_DIR"):
+        roots.append(Path(os.environ["OPENCLAW_SKILLS_DIR"]) / "shared-utils")
+    roots += [Path.home() / ".openclaw" / "skills" / "shared-utils",
+              Path("/data/.openclaw/skills/shared-utils")]
+    seen, ordered = set(), []
+    for root in roots:
+        if root not in seen:
+            seen.add(root)
+            ordered.append(root)
+    return ordered
+
+
 def _load_design_intelligence():
     """shared-utils/signature_launch/design_intelligence.py, loaded by path (repo and installed layouts alike)."""
     import importlib.util
-    path = HERE.parents[1] / "shared-utils" / "signature_launch" / "design_intelligence.py"
+    rel = Path("signature_launch") / "design_intelligence.py"
+    tried = []
+    for root in _shared_utils_candidates():
+        path = root / rel
+        tried.append(str(path))
+        if path.is_file():
+            break
+    else:
+        raise FileNotFoundError("design_intelligence.py not found in any shared-utils layout: "
+                                + "; ".join(tried))
     spec = importlib.util.spec_from_file_location("signature_launch_design_intelligence", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

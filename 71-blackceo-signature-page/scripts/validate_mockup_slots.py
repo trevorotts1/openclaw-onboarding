@@ -64,6 +64,7 @@ Exit codes: 0 pass, 1 one named FAIL line per failure, 2 unreadable input.
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -71,19 +72,35 @@ from pathlib import Path
 DEFAULT_STAGE = "final-mockups"
 SLOT_NUM_RE = re.compile(r"(\d+)\s*$")
 REPO_ROOT = Path(__file__).resolve().parents[2]
-IMAGE_SLOTS_PATH = (REPO_ROOT / "shared-utils" / "signature_launch" / "design"
-                    / "image_slots.py")
+IMAGE_SLOTS_REL = Path("signature_launch") / "design" / "image_slots.py"
+IMAGE_SLOTS_PATH = REPO_ROOT / "shared-utils" / IMAGE_SLOTS_REL
 COPY_SPECS_DIR = Path(__file__).resolve().parents[1] / "references" / "copy-specs"
 REQUEST_FILES = ("production-request-final-mockups.json", "production-request.json",
                  "page-request.json")
 _IMAGE_SLOTS = None
+
+def image_slots_path():
+    """The image-slot contract file: the sibling shared-utils (resolved, then as spelled), then
+    OPENCLAW_SKILLS_DIR, ~/.openclaw/skills and /data/.openclaw/skills (SWB-570). A second, older
+    skill copy under ~/.claude/skills has no sibling shared-utils of its own. Returns the first
+    that exists, else the sibling path (so the failure names it)."""
+    spelled = Path(os.path.abspath(__file__)).parents[2] / "shared-utils"
+    roots = [REPO_ROOT / "shared-utils", spelled]
+    if os.environ.get("OPENCLAW_SKILLS_DIR"):
+        roots.append(Path(os.environ["OPENCLAW_SKILLS_DIR"]) / "shared-utils")
+    roots += [Path.home() / ".openclaw" / "skills" / "shared-utils",
+              Path("/data/.openclaw/skills/shared-utils")]
+    for root in roots:
+        if (root / IMAGE_SLOTS_REL).is_file():
+            return root / IMAGE_SLOTS_REL
+    return IMAGE_SLOTS_PATH
 
 def image_slots():
     """shared-utils' one image-slot contract (the reverse-coverage floor)."""
     global _IMAGE_SLOTS
     if _IMAGE_SLOTS is None:
         spec = importlib.util.spec_from_file_location(
-            "signature_launch_image_slots", IMAGE_SLOTS_PATH)
+            "signature_launch_image_slots", image_slots_path())
         if spec is None or spec.loader is None:
             raise SystemExit(f"unreadable image-slot contract: {IMAGE_SLOTS_PATH}")
         module = importlib.util.module_from_spec(spec)
